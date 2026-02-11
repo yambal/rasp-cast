@@ -3,5 +3,6 @@ dist/
 music/*.mp3
 music/*.wav
 music/*.flac
+!music/test*.mp3
 .env
 .claude/
