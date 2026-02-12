@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
 import type { Response } from 'express';
 import { parseFile } from 'music-metadata';
@@ -16,10 +17,26 @@ interface ClientConnection {
 }
 
 interface TrackInfo {
-  filePath: string;
+  type: 'file' | 'url';
   title: string;
   artist: string;
-  filename: string;
+  // file 用
+  filePath?: string;
+  filename?: string;
+  // url 用
+  url?: string;
+}
+
+interface PlaylistFileTrack {
+  type: 'file' | 'url';
+  path?: string;
+  url?: string;
+  title?: string;
+  artist?: string;
+}
+
+interface PlaylistFile {
+  tracks: PlaylistFileTrack[];
 }
 
 export class StreamManager {
@@ -37,7 +54,63 @@ export class StreamManager {
     this.musicDir = musicDir;
   }
 
-  async scanMusic(): Promise<number> {
+  async loadPlaylist(playlistPath: string): Promise<number> {
+    // playlist.json が存在すればそちらを使う
+    if (fs.existsSync(playlistPath)) {
+      try {
+        const raw = fs.readFileSync(playlistPath, 'utf-8');
+        const playlist: PlaylistFile = JSON.parse(raw);
+        await this.loadFromPlaylistFile(playlist);
+        if (this.tracks.length > 0) {
+          console.log(`[StreamManager] Loaded ${this.tracks.length} tracks from playlist`);
+          return this.tracks.length;
+        }
+        console.log('[StreamManager] Playlist empty, falling back to directory scan');
+      } catch (err) {
+        console.error('[StreamManager] Failed to parse playlist, falling back to directory scan:', err);
+      }
+    }
+
+    // フォールバック: music/ ディレクトリスキャン
+    return this.scanMusicDir();
+  }
+
+  private async loadFromPlaylistFile(playlist: PlaylistFile): Promise<void> {
+    this.tracks = [];
+
+    for (const entry of playlist.tracks) {
+      if (entry.type === 'file' && entry.path) {
+        const filePath = path.isAbsolute(entry.path)
+          ? entry.path
+          : path.join(this.musicDir, '..', entry.path);
+        const filename = path.basename(filePath);
+        let title = entry.title || path.basename(filename, '.mp3');
+        let artist = entry.artist || 'Unknown';
+
+        // JSON に title/artist がなければ ID3 タグから取得
+        if (!entry.title || !entry.artist) {
+          try {
+            const metadata = await parseFile(filePath);
+            if (!entry.title && metadata.common.title) title = metadata.common.title;
+            if (!entry.artist && metadata.common.artist) artist = metadata.common.artist;
+          } catch {
+            // ID3 読取失敗時はフォールバック値を使用
+          }
+        }
+
+        this.tracks.push({ type: 'file', filePath, filename, title, artist });
+      } else if (entry.type === 'url' && entry.url) {
+        this.tracks.push({
+          type: 'url',
+          url: entry.url,
+          title: entry.title || 'Unknown',
+          artist: entry.artist || 'Unknown',
+        });
+      }
+    }
+  }
+
+  private async scanMusicDir(): Promise<number> {
     const files = fs.readdirSync(this.musicDir)
       .filter(f => f.toLowerCase().endsWith('.mp3'))
       .sort();
@@ -56,10 +129,10 @@ export class StreamManager {
         // ID3 読取失敗時はファイル名をフォールバック
       }
 
-      this.tracks.push({ filePath, title, artist, filename: file });
+      this.tracks.push({ type: 'file', filePath, title, artist, filename: file });
     }
 
-    console.log(`[StreamManager] Scanned ${this.tracks.length} tracks`);
+    console.log(`[StreamManager] Scanned ${this.tracks.length} tracks from directory`);
     return this.tracks.length;
   }
 
@@ -132,17 +205,19 @@ export class StreamManager {
       }
     }
 
+    if (track.type === 'file') {
+      await this.playLocalTrack(track);
+    } else {
+      await this.playUrlTrack(track);
+    }
+  }
+
+  private async playLocalTrack(track: TrackInfo): Promise<void> {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
     return new Promise<void>((resolve) => {
-      const stream = createReadStream(track.filePath, { highWaterMark: 16384 });
-
-      // ビットレートに合わせた送信レート制御
-      // 128kbps = 16000 bytes/sec → 16384 bytes chunk ≈ 1.024 sec
-      const bytesPerSecond = (this.targetBitrate * 1000) / 8;
-      let totalBytesSent = 0;
-      const startTime = Date.now();
+      const stream = createReadStream(track.filePath!, { highWaterMark: 16384 });
 
       const onAbort = () => {
         stream.destroy();
@@ -150,36 +225,82 @@ export class StreamManager {
       };
       signal.addEventListener('abort', onAbort, { once: true });
 
-      stream.on('data', (chunk: Buffer | string) => {
-        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-        if (signal.aborted) return;
+      this.streamWithRateControl(stream, signal, resolve, track.filename || 'unknown');
+    });
+  }
 
-        // レート制御: 送信が速すぎる場合は pause して待つ
-        totalBytesSent += buf.length;
-        const expectedTime = (totalBytesSent / bytesPerSecond) * 1000;
-        const actualTime = Date.now() - startTime;
-        const delay = expectedTime - actualTime;
+  private async playUrlTrack(track: TrackInfo): Promise<void> {
+    this.abortController = new AbortController();
+    const { signal } = this.abortController;
 
-        if (delay > 50) {
-          stream.pause();
-          setTimeout(() => {
-            if (!signal.aborted) stream.resume();
-          }, delay);
-        }
+    try {
+      const response = await fetch(track.url!, { signal });
+      if (!response.ok) {
+        console.error(`[StreamManager] HTTP ${response.status} fetching ${track.url}`);
+        return;
+      }
+      if (!response.body) {
+        console.error(`[StreamManager] No response body for ${track.url}`);
+        return;
+      }
 
-        this.broadcast(buf);
+      const nodeStream = Readable.fromWeb(response.body as any);
+
+      return new Promise<void>((resolve) => {
+        const onAbort = () => {
+          nodeStream.destroy();
+          resolve();
+        };
+        signal.addEventListener('abort', onAbort, { once: true });
+
+        this.streamWithRateControl(nodeStream, signal, resolve, track.url || 'unknown');
       });
+    } catch (err: any) {
+      if (err.name === 'AbortError') return;
+      console.error(`[StreamManager] Error fetching ${track.url}:`, err.message);
+    }
+  }
 
-      stream.on('end', () => {
-        signal.removeEventListener('abort', onAbort);
-        resolve();
-      });
+  private streamWithRateControl(
+    stream: Readable,
+    signal: AbortSignal,
+    resolve: () => void,
+    label: string,
+  ): void {
+    // ビットレートに合わせた送信レート制御
+    // 128kbps = 16000 bytes/sec → 16384 bytes chunk ≈ 1.024 sec
+    const bytesPerSecond = (this.targetBitrate * 1000) / 8;
+    let totalBytesSent = 0;
+    const startTime = Date.now();
 
-      stream.on('error', (err) => {
-        console.error(`[StreamManager] Error reading ${track.filename}:`, err.message);
-        signal.removeEventListener('abort', onAbort);
-        resolve();
-      });
+    stream.on('data', (chunk: Buffer | string) => {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      if (signal.aborted) return;
+
+      // レート制御: 送信が速すぎる場合は pause して待つ
+      totalBytesSent += buf.length;
+      const expectedTime = (totalBytesSent / bytesPerSecond) * 1000;
+      const actualTime = Date.now() - startTime;
+      const delay = expectedTime - actualTime;
+
+      if (delay > 50) {
+        stream.pause();
+        setTimeout(() => {
+          if (!signal.aborted) stream.resume();
+        }, delay);
+      }
+
+      this.broadcast(buf);
+    });
+
+    stream.on('end', () => {
+      signal.removeEventListener('abort', () => {});
+      resolve();
+    });
+
+    stream.on('error', (err) => {
+      console.error(`[StreamManager] Error streaming ${label}:`, err.message);
+      resolve();
     });
   }
 

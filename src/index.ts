@@ -8,14 +8,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MUSIC_DIR = process.env.MUSIC_DIR || path.join(__dirname, '..', 'music');
 const PORT = Number(process.env.PORT) || 3000;
 
+const PLAYLIST_PATH = process.env.PLAYLIST_PATH || path.join(__dirname, '..', 'playlist.json');
+
 async function main() {
   const app = express();
   const streamManager = new StreamManager(MUSIC_DIR);
 
-  const trackCount = await streamManager.scanMusic();
+  const trackCount = await streamManager.loadPlaylist(PLAYLIST_PATH);
   if (trackCount === 0) {
-    console.error(`[rasp-cast] No MP3 files found in ${MUSIC_DIR}`);
-    console.error('[rasp-cast] Place some .mp3 files in the music/ directory and restart.');
+    console.error(`[rasp-cast] No tracks found. Use playlist.json or place .mp3 files in ${MUSIC_DIR}`);
     process.exit(1);
   }
 
