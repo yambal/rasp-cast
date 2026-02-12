@@ -9,7 +9,7 @@ export function createScheduleRoutes(scheduleManager: ScheduleManager): Router {
    * GET /schedule — 番組一覧取得
    */
   router.get('/schedule', (_req, res) => {
-    res.json({ programs: scheduleManager.getPrograms() });
+    res.json({ programs: scheduleManager.getProgramsWithNextRun() });
   });
 
   /**

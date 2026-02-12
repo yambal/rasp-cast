@@ -34,6 +34,7 @@ export interface ScheduleProgram {
     artist?: string;
   };
   enabled: boolean;
+  nextRun: string | null;
 }
 
 export interface ScheduleResponse {

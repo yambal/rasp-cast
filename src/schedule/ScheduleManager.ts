@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import cron from 'node-cron';
+import { CronExpressionParser } from 'cron-parser';
 import type { StreamManager, PlaylistFileTrack } from '../stream/StreamManager.js';
 
 interface ScheduledProgram {
@@ -50,6 +51,23 @@ export class ScheduleManager {
 
   getPrograms(): ScheduledProgram[] {
     return this.programs;
+  }
+
+  getProgramsWithNextRun(): (ScheduledProgram & { nextRun: string | null })[] {
+    return this.programs.map((p) => {
+      let nextRun: string | null = null;
+      if (p.enabled) {
+        try {
+          const interval = CronExpressionParser.parse(p.cron, {
+            tz: 'Asia/Tokyo',
+          });
+          nextRun = interval.next().toISOString();
+        } catch {
+          // invalid cron
+        }
+      }
+      return { ...p, nextRun };
+    });
   }
 
   addProgram(input: Omit<ScheduledProgram, 'id'>): ScheduledProgram {

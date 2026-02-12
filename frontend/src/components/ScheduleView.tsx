@@ -5,6 +5,17 @@ interface Props {
   programs: ScheduleProgram[];
 }
 
+function formatNextRun(iso: string | null): string {
+  if (!iso) return '---';
+  const d = new Date(iso);
+  return d.toLocaleString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 export function ScheduleView({ programs }: Props) {
   if (programs.length === 0) return null;
 
@@ -32,9 +43,9 @@ export function ScheduleView({ programs }: Props) {
                 {p.track.title ?? p.track.url ?? p.track.path}
               </Text>
             </Box>
-            <Flex align="center" gap={2} ml={2}>
-              <Text fontSize="xs" color="fg.muted" fontFamily="mono">
-                {p.cron}
+            <Flex direction="column" align="flex-end" ml={2}>
+              <Text fontSize="xs" color="fg.muted">
+                次回 {formatNextRun(p.nextRun)}
               </Text>
               {!p.enabled && (
                 <Badge colorPalette="gray" size="sm">OFF</Badge>
