@@ -1,4 +1,4 @@
-import { Container, Flex, Heading } from '@chakra-ui/react';
+import { Box, Container, Flex, Heading } from '@chakra-ui/react';
 import { useStatus } from './hooks/useStatus';
 import { useSchedule } from './hooks/useSchedule';
 import { StatusBar } from './components/StatusBar';
@@ -8,6 +8,7 @@ import { ScheduleView } from './components/ScheduleView';
 export function App() {
   const status = useStatus();
   const programs = useSchedule();
+  const streamUrl = status?.streamUrl;
 
   return (
     <Container maxW="container.sm" py={6}>
@@ -17,6 +18,12 @@ export function App() {
         <StatusBar status={status} />
 
         <NowPlaying status={status} />
+
+        {streamUrl && (
+          <Box>
+            <audio controls src={streamUrl} style={{ width: '100%' }} />
+          </Box>
+        )}
 
         <ScheduleView programs={programs} />
       </Flex>

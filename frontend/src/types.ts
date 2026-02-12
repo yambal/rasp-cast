@@ -16,6 +16,7 @@ export interface StatusResponse {
   currentTrack: Track | null;
   totalTracks: number;
   currentIndex: number;
+  streamUrl: string;
 }
 
 export interface PlaylistResponse {

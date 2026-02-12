@@ -31,7 +31,9 @@ export function createStreamRoutes(streamManager) {
      * GET /status - 現在の配信状態 (デバッグ用)
      */
     router.get('/status', (_req, res) => {
-        res.json(streamManager.getStatus());
+        const status = streamManager.getStatus();
+        const streamUrl = process.env.PUBLIC_STREAM_URL || '';
+        res.json({ ...status, streamUrl });
     });
     /**
      * POST /skip - 次の曲へスキップ
