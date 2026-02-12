@@ -4,6 +4,7 @@ import { useSchedule } from './hooks/useSchedule';
 import { StatusBar } from './components/StatusBar';
 import { NowPlaying } from './components/NowPlaying';
 import { ScheduleView } from './components/ScheduleView';
+import { HowToListen } from './components/HowToListen';
 
 export function App() {
   const status = useStatus();
@@ -26,6 +27,8 @@ export function App() {
         )}
 
         <ScheduleView programs={programs} />
+
+        {streamUrl && <HowToListen streamUrl={streamUrl} />}
       </Flex>
     </Container>
   );
