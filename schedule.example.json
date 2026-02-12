@@ -1,0 +1,28 @@
+{
+  "programs": [
+    {
+      "id": "example-hourly-jingle",
+      "name": "Hourly Jingle",
+      "cron": "0 * * * *",
+      "track": {
+        "type": "file",
+        "path": "music/jingle.mp3",
+        "title": "Station Jingle",
+        "artist": "Rasp-Cast"
+      },
+      "enabled": true
+    },
+    {
+      "id": "example-morning-greeting",
+      "name": "Morning Greeting",
+      "cron": "0 7 * * *",
+      "track": {
+        "type": "url",
+        "url": "https://example.com/morning.mp3",
+        "title": "Good Morning",
+        "artist": "DJ Bot"
+      },
+      "enabled": false
+    }
+  ]
+}

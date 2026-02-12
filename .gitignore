@@ -5,4 +5,5 @@ music/*.wav
 music/*.flac
 .env
 playlist.json
+schedule.json
 .claude/

@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "express": "^4.21.0",
-    "music-metadata": "^10.6.0"
+    "music-metadata": "^10.6.0",
+    "node-cron": "^4.2.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",

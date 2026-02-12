@@ -27,11 +27,16 @@ API キーは環境変数 `API_KEY` または `.env` ファイルで設定しま
 | GET | `/stream` | 不要 | MP3 ストリーム |
 | GET | `/status` | 不要 | 配信状態 |
 | GET | `/playlist` | 不要 | プレイリスト取得 |
+| GET | `/schedule` | 不要 | スケジュール番組一覧 |
 | POST | `/skip` | 必要 | 次の曲へスキップ |
 | POST | `/skip/:id` | 必要 | 指定トラックへジャンプ |
 | PUT | `/playlist` | 必要 | プレイリスト全置換 |
 | POST | `/playlist/tracks` | 必要 | トラック追加 |
 | DELETE | `/playlist/tracks/:id` | 必要 | トラック削除 |
+| POST | `/interrupt` | 必要 | 割り込み再生 |
+| POST | `/schedule/programs` | 必要 | スケジュール番組追加 |
+| PUT | `/schedule/programs/:id` | 必要 | スケジュール番組更新 |
+| DELETE | `/schedule/programs/:id` | 必要 | スケジュール番組削除 |
 
 ---
 
@@ -84,6 +89,7 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 {
   "version": "0.1.3",
   "isStreaming": true,
+  "isPlayingInterrupt": false,
   "listeners": 2,
   "currentTrack": {
     "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -100,6 +106,7 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 |---|---|---|
 | `version` | string | サーバーバージョン |
 | `isStreaming` | boolean | 配信中かどうか |
+| `isPlayingInterrupt` | boolean | 割り込み再生中かどうか |
 | `listeners` | number | 接続中のリスナー数 |
 | `currentTrack` | object \| null | 現在再生中のトラック |
 | `totalTracks` | number | プレイリストの総トラック数 |
@@ -308,6 +315,191 @@ UUID を指定してトラックを削除します。
 
 ---
 
+## POST /interrupt
+
+現在の曲を中断し、指定トラックを割り込み再生します。再生終了後はプレイリストに自動復帰します。
+
+### リクエスト
+
+```json
+{
+  "type": "url",
+  "url": "https://example.com/jingle.mp3",
+  "title": "Jingle",
+  "artist": "Radio"
+}
+```
+
+トラック形式はプレイリストと同じ（`type: "file"` + `path`、または `type: "url"` + `url`）。
+
+### レスポンス
+
+```json
+{
+  "ok": true,
+  "message": "Interrupt started"
+}
+```
+
+### エラー（400）
+
+```json
+{
+  "error": "Invalid track: type with path (file) or url (url) required"
+}
+```
+
+---
+
+## GET /schedule
+
+スケジュール番組の一覧を取得します。
+
+### レスポンス
+
+```json
+{
+  "programs": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "name": "毎時ジングル",
+      "cron": "0 * * * *",
+      "track": {
+        "type": "url",
+        "url": "https://example.com/jingle.mp3",
+        "title": "Jingle",
+        "artist": "Radio"
+      },
+      "enabled": true
+    }
+  ]
+}
+```
+
+### 番組オブジェクト
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `id` | string | 番組 UUID |
+| `name` | string | 番組名 |
+| `cron` | string | cron 式（例: `"0 * * * *"` = 毎時0分） |
+| `track` | object | 再生するトラック（プレイリストと同じ形式） |
+| `enabled` | boolean | 有効/無効 |
+
+---
+
+## POST /schedule/programs
+
+スケジュール番組を追加します。UUID は自動付与されます。
+
+### リクエスト
+
+```json
+{
+  "name": "毎時ジングル",
+  "cron": "0 * * * *",
+  "track": {
+    "type": "url",
+    "url": "https://example.com/jingle.mp3",
+    "title": "Jingle",
+    "artist": "Radio"
+  },
+  "enabled": true
+}
+```
+
+| フィールド | 必須 | 説明 |
+|---|---|---|
+| `name` | はい | 番組名 |
+| `cron` | はい | cron 式 |
+| `track` | はい | トラック（`type` + `path` or `url`） |
+| `enabled` | いいえ | デフォルト `true` |
+
+### レスポンス
+
+```json
+{
+  "ok": true,
+  "program": { "id": "...", "name": "...", "cron": "...", "track": {...}, "enabled": true }
+}
+```
+
+### エラー（400）
+
+```json
+{
+  "error": "Invalid cron expression: invalid"
+}
+```
+
+---
+
+## PUT /schedule/programs/:id
+
+スケジュール番組を更新します。指定したフィールドのみ上書きされます。
+
+### パラメータ
+
+| 名前 | 説明 |
+|---|---|
+| `id` | 番組の UUID |
+
+### リクエスト
+
+```json
+{
+  "cron": "*/30 * * * *",
+  "enabled": false
+}
+```
+
+### レスポンス
+
+```json
+{
+  "ok": true,
+  "program": { "id": "...", "name": "...", "cron": "*/30 * * * *", "track": {...}, "enabled": false }
+}
+```
+
+### エラー（404）
+
+```json
+{
+  "error": "Program not found: 550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+---
+
+## DELETE /schedule/programs/:id
+
+スケジュール番組を削除します。
+
+### パラメータ
+
+| 名前 | 説明 |
+|---|---|
+| `id` | 削除する番組の UUID |
+
+### レスポンス
+
+```json
+{
+  "ok": true
+}
+```
+
+### エラー（404）
+
+```json
+{
+  "error": "Program not found: 550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+---
+
 ## エラーレスポンス
 
 ### 401 Unauthorized
@@ -370,4 +562,29 @@ curl -X PUT -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"tracks":[{"type":"file","path":"music/song1.mp3"},{"type":"file","path":"music/song2.mp3"}]}' \
   http://localhost:3000/playlist
+
+# 割り込み再生
+curl -X POST -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"type":"url","url":"https://example.com/jingle.mp3","title":"Jingle","artist":"Radio"}' \
+  http://localhost:3000/interrupt
+
+# スケジュール一覧
+curl http://localhost:3000/schedule
+
+# スケジュール番組追加
+curl -X POST -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"毎時ジングル","cron":"0 * * * *","track":{"type":"url","url":"https://example.com/jingle.mp3","title":"Jingle"}}' \
+  http://localhost:3000/schedule/programs
+
+# スケジュール番組更新
+curl -X PUT -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"enabled":false}' \
+  http://localhost:3000/schedule/programs/550e8400-e29b-41d4-a716-446655440000
+
+# スケジュール番組削除
+curl -X DELETE -H "Authorization: Bearer YOUR_API_KEY" \
+  http://localhost:3000/schedule/programs/550e8400-e29b-41d4-a716-446655440000
 ```

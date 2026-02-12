@@ -29,7 +29,7 @@ interface TrackInfo {
   url?: string;
 }
 
-interface PlaylistFileTrack {
+export interface PlaylistFileTrack {
   id?: string;
   type: 'file' | 'url';
   path?: string;
@@ -53,6 +53,9 @@ export class StreamManager {
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
+  /** 割り込み再生用 */
+  private interruptTrack: TrackInfo | null = null;
+  private isPlayingInterrupt = false;
 
   constructor(musicDir: string) {
     this.musicDir = musicDir;
@@ -82,38 +85,46 @@ export class StreamManager {
 
   private async loadFromPlaylistFile(playlist: PlaylistFile): Promise<void> {
     this.tracks = [];
-
     for (const entry of playlist.tracks) {
-      if (entry.type === 'file' && entry.path) {
-        const filePath = path.isAbsolute(entry.path)
-          ? entry.path
-          : path.join(this.musicDir, '..', entry.path);
-        const filename = path.basename(filePath);
-        let title = entry.title || path.basename(filename, '.mp3');
-        let artist = entry.artist || 'Unknown';
-
-        // JSON に title/artist がなければ ID3 タグから取得
-        if (!entry.title || !entry.artist) {
-          try {
-            const metadata = await parseFile(filePath);
-            if (!entry.title && metadata.common.title) title = metadata.common.title;
-            if (!entry.artist && metadata.common.artist) artist = metadata.common.artist;
-          } catch {
-            // ID3 読取失敗時はフォールバック値を使用
-          }
-        }
-
-        this.tracks.push({ id: entry.id || crypto.randomUUID(), type: 'file', filePath, filename, title, artist });
-      } else if (entry.type === 'url' && entry.url) {
-        this.tracks.push({
-          id: entry.id || crypto.randomUUID(),
-          type: 'url',
-          url: entry.url,
-          title: entry.title || 'Unknown',
-          artist: entry.artist || 'Unknown',
-        });
+      try {
+        this.tracks.push(await this.buildTrackInfo(entry));
+      } catch {
+        // 無効なエントリはスキップ
       }
     }
+  }
+
+  private async buildTrackInfo(entry: PlaylistFileTrack): Promise<TrackInfo> {
+    if (entry.type === 'file' && entry.path) {
+      const filePath = path.isAbsolute(entry.path)
+        ? entry.path
+        : path.join(this.musicDir, '..', entry.path);
+      const filename = path.basename(filePath);
+      let title = entry.title || path.basename(filename, '.mp3');
+      let artist = entry.artist || 'Unknown';
+
+      if (!entry.title || !entry.artist) {
+        try {
+          const metadata = await parseFile(filePath);
+          if (!entry.title && metadata.common.title) title = metadata.common.title;
+          if (!entry.artist && metadata.common.artist) artist = metadata.common.artist;
+        } catch {
+          // ID3 読取失敗時はフォールバック値を使用
+        }
+      }
+
+      return { id: entry.id || crypto.randomUUID(), type: 'file', filePath, filename, title, artist };
+    }
+    if (entry.type === 'url' && entry.url) {
+      return {
+        id: entry.id || crypto.randomUUID(),
+        type: 'url',
+        url: entry.url,
+        title: entry.title || 'Unknown',
+        artist: entry.artist || 'Unknown',
+      };
+    }
+    throw new Error('Invalid track: type with path (file) or url (url) required');
   }
 
   private async scanMusicDir(): Promise<number> {
@@ -169,9 +180,38 @@ export class StreamManager {
     console.log('[StreamManager] Streaming started');
 
     while (this.isStreaming) {
+      // 割り込みトラックが待機中ならプレイリストより先に再生
+      if (this.interruptTrack) {
+        await this.playInterrupt();
+        continue;
+      }
+
       await this.playTrack(this.tracks[this.currentIndex]);
+
+      // 割り込みで中断された場合は currentIndex を進めない
+      if (this.interruptTrack) continue;
+
       this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
     }
+  }
+
+  /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを再生後プレイリストに復帰 */
+  async interrupt(trackInput: PlaylistFileTrack): Promise<void> {
+    const track = await this.buildTrackInfo(trackInput);
+    this.interruptTrack = track;
+    this.skip();
+  }
+
+  private async playInterrupt(): Promise<void> {
+    while (this.interruptTrack) {
+      const track = this.interruptTrack;
+      this.interruptTrack = null;
+      this.isPlayingInterrupt = true;
+      console.log(`[StreamManager] Playing interrupt: ${track.title}`);
+      await this.playTrack(track);
+    }
+    this.isPlayingInterrupt = false;
+    console.log('[StreamManager] Interrupt finished, resuming playlist');
   }
 
   skip(): void {
@@ -193,6 +233,7 @@ export class StreamManager {
     return {
       version,
       isStreaming: this.isStreaming,
+      isPlayingInterrupt: this.isPlayingInterrupt,
       listeners: this.clients.size,
       currentTrack: this.currentTrack
         ? { id: this.currentTrack.id, title: this.currentTrack.title, artist: this.currentTrack.artist, filename: this.currentTrack.filename }
