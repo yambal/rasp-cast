@@ -1,4 +1,4 @@
-import { Box, Container, Flex, Heading } from '@chakra-ui/react';
+import { Box, Container, Flex, Heading, Text, Link } from '@chakra-ui/react';
 import { useStatus } from './hooks/useStatus';
 import { useSchedule } from './hooks/useSchedule';
 import { StatusBar } from './components/StatusBar';
@@ -31,6 +31,19 @@ export function App() {
 
         {streamUrl && <HowToListen streamUrl={streamUrl} stationName={stationName} />}
       </Flex>
+
+      <Box as="footer" mt={8} pt={4} borderTopWidth="1px" borderColor="gray.200">
+        <Text fontSize="xs" color="fg.muted">
+          Powerd by 
+          <Link
+            href="https://yambal.github.io/rasp-cast/RASP_CAST"
+            target="_blank"
+            color="blue.500"
+          >
+            RASP CAST
+          </Link>
+        </Text>
+      </Box>
     </Container>
   );
 }
