@@ -48,6 +48,7 @@ ExecStartPre=-/bin/bash -c 'cd $PROJECT_DIR && git pull --ff-only && npm install
 ExecStart=$(which npx) tsx src/index.ts
 Restart=on-failure
 RestartSec=5
+EnvironmentFile=-$PROJECT_DIR/.env
 Environment=NODE_ENV=production
 Environment=PORT=3000
 Environment=MUSIC_DIR=$MUSIC_DIR
