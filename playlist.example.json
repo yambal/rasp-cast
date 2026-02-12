@@ -1,0 +1,14 @@
+{
+  "tracks": [
+    {
+      "type": "file",
+      "path": "music/song.mp3"
+    },
+    {
+      "type": "url",
+      "url": "https://example.com/track.mp3",
+      "title": "Remote Track",
+      "artist": "Artist Name"
+    }
+  ]
+}
