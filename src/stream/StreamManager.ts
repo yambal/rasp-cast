@@ -1,9 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createReadStream } from 'node:fs';
+import { createRequire } from 'node:module';
 import type { Response } from 'express';
 import { parseFile } from 'music-metadata';
 import { ICY_METAINT, IcyInterleaver } from './IcyMetadata.js';
+
+const require = createRequire(import.meta.url);
+const { version } = require('../../package.json');
 
 interface ClientConnection {
   res: Response;
@@ -99,6 +103,7 @@ export class StreamManager {
 
   getStatus() {
     return {
+      version,
       isStreaming: this.isStreaming,
       listeners: this.clients.size,
       currentTrack: this.currentTrack
