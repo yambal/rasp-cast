@@ -188,8 +188,11 @@ export class StreamManager {
 
       await this.playTrack(this.tracks[this.currentIndex]);
 
-      // 割り込みで中断された場合は currentIndex を進めない
-      if (this.interruptTrack) continue;
+      // 割り込みで中断された場合は次の曲へ進める
+      if (this.interruptTrack) {
+        this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
+        continue;
+      }
 
       this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
     }
