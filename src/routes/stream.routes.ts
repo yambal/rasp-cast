@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { ICY_METAINT } from '../stream/IcyMetadata.js';
 import type { StreamManager } from '../stream/StreamManager.js';
+import { requireApiKey } from '../middleware/auth.js';
 
 export function createStreamRoutes(streamManager: StreamManager): Router {
   const router = Router();
@@ -43,7 +44,7 @@ export function createStreamRoutes(streamManager: StreamManager): Router {
   /**
    * POST /skip - 曲をスキップ (デバッグ用)
    */
-  router.post('/skip', (_req, res) => {
+  router.post('/skip', requireApiKey, (_req, res) => {
     streamManager.skip();
     res.json({ ok: true, message: 'Skipping to next track' });
   });

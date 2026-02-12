@@ -2,7 +2,9 @@
   "tracks": [
     {
       "type": "file",
-      "path": "music/test128.mp3"
+      "path": "music/test128.mp3",
+      "title": "test128",
+      "artist": "Unknown"
     },
     {
       "type": "url",

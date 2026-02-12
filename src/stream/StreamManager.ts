@@ -46,6 +46,7 @@ export class StreamManager {
   private isStreaming = false;
   private currentTrack: TrackInfo | null = null;
   private musicDir: string;
+  private playlistPath: string = '';
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
@@ -55,6 +56,7 @@ export class StreamManager {
   }
 
   async loadPlaylist(playlistPath: string): Promise<number> {
+    this.playlistPath = playlistPath;
     // playlist.json が存在すればそちらを使う
     if (fs.existsSync(playlistPath)) {
       try {
@@ -185,6 +187,58 @@ export class StreamManager {
       totalTracks: this.tracks.length,
       currentIndex: this.currentIndex,
     };
+  }
+
+  getPlaylist(): PlaylistFileTrack[] {
+    return this.tracks.map((t) => {
+      if (t.type === 'file') {
+        const rel = t.filePath
+          ? path.relative(path.join(this.musicDir, '..'), t.filePath).replace(/\\/g, '/')
+          : undefined;
+        return { type: 'file' as const, path: rel, title: t.title, artist: t.artist };
+      }
+      return { type: 'url' as const, url: t.url, title: t.title, artist: t.artist };
+    });
+  }
+
+  async setPlaylist(tracks: PlaylistFileTrack[]): Promise<number> {
+    const playlist: PlaylistFile = { tracks };
+    fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
+    await this.loadFromPlaylistFile(playlist);
+    this.adjustCurrentIndex();
+    console.log(`[StreamManager] Playlist updated: ${this.tracks.length} tracks`);
+    return this.tracks.length;
+  }
+
+  async addTrack(track: PlaylistFileTrack): Promise<number> {
+    const current = this.getPlaylist();
+    current.push(track);
+    return this.setPlaylist(current);
+  }
+
+  async removeTrack(index: number): Promise<number> {
+    const current = this.getPlaylist();
+    if (index < 0 || index >= current.length) {
+      throw new Error(`Invalid track index: ${index}`);
+    }
+    current.splice(index, 1);
+    // 削除位置に応じて currentIndex を調整
+    if (index < this.currentIndex) {
+      this.currentIndex--;
+    } else if (index === this.currentIndex) {
+      // 現在再生中のトラックが削除された場合、次の曲へスキップ
+      this.skip();
+    }
+    const count = await this.setPlaylist(current);
+    return count;
+  }
+
+  private adjustCurrentIndex(): void {
+    if (this.tracks.length === 0) {
+      this.currentIndex = 0;
+    } else if (this.currentIndex >= this.tracks.length) {
+      this.currentIndex = 0;
+    }
   }
 
   private getCurrentTitle(): string {

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url';
 import express from 'express';
 import { StreamManager } from './stream/StreamManager.js';
 import { createStreamRoutes } from './routes/stream.routes.js';
+import { createPlaylistRoutes } from './routes/playlist.routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MUSIC_DIR = process.env.MUSIC_DIR || path.join(__dirname, '..', 'music');
@@ -20,7 +21,9 @@ async function main() {
     process.exit(1);
   }
 
+  app.use(express.json());
   app.use(createStreamRoutes(streamManager));
+  app.use(createPlaylistRoutes(streamManager));
 
   app.listen(PORT, () => {
     console.log(`[rasp-cast] Server running on http://localhost:${PORT}`);
