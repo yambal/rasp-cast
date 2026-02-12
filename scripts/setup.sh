@@ -45,7 +45,7 @@ Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$PROJECT_DIR
 ExecStartPre=-/bin/bash -c 'cd $PROJECT_DIR && git pull --ff-only && npm install --omit=dev'
-ExecStart=$(which npx) tsx src/index.ts
+ExecStart=$(which node) $PROJECT_DIR/dist/index.js
 Restart=on-failure
 RestartSec=5
 EnvironmentFile=-$PROJECT_DIR/.env
