@@ -9,8 +9,8 @@ export function usePlaylist(intervalMs = 5000) {
     try {
       const data = await fetchPlaylist();
       setTracks(data.tracks);
-    } catch {
-      // ignore
+    } catch (err) {
+      console.error('[usePlaylist] fetch failed:', err);
     }
   }, []);
 
