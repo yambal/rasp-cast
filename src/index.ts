@@ -22,8 +22,8 @@ async function main() {
 
   const trackCount = await streamManager.loadPlaylist(PLAYLIST_PATH);
   if (trackCount === 0) {
-    console.error(`[rasp-cast] No tracks found. Use playlist.json or place .mp3 files in ${MUSIC_DIR}`);
-    process.exit(1);
+    console.warn(`[rasp-cast] No tracks found. Use playlist.json or place .mp3 files in ${MUSIC_DIR}`);
+    console.warn(`[rasp-cast] Server will start but streaming is paused until tracks are added.`);
   }
 
   scheduleManager.load();
@@ -44,7 +44,9 @@ async function main() {
     console.log(`[rasp-cast] ${trackCount} tracks loaded`);
   });
 
-  streamManager.startStreaming();
+  if (trackCount > 0) {
+    streamManager.startStreaming();
+  }
 }
 
 main().catch((err) => {
