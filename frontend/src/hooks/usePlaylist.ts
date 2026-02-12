@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { Track } from '../types';
 import { fetchPlaylist } from '../api';
 
-export function usePlaylist() {
+export function usePlaylist(intervalMs = 5000) {
   const [tracks, setTracks] = useState<Track[]>([]);
 
   const refresh = useCallback(async () => {
@@ -16,7 +16,9 @@ export function usePlaylist() {
 
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    const id = setInterval(refresh, intervalMs);
+    return () => clearInterval(id);
+  }, [refresh, intervalMs]);
 
   return { tracks, refresh };
 }
