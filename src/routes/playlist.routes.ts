@@ -41,8 +41,8 @@ export function createPlaylistRoutes(streamManager: StreamManager): Router {
         res.status(400).json({ error: 'Invalid track: type with path (file) or url (url) required' });
         return;
       }
-      const count = await streamManager.addTrack(track);
-      res.json({ ok: true, trackCount: count });
+      const { id, trackCount } = await streamManager.addTrack(track);
+      res.json({ ok: true, id, trackCount });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

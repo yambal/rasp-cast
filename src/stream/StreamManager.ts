@@ -223,10 +223,12 @@ export class StreamManager {
     return this.tracks.length;
   }
 
-  async addTrack(track: PlaylistFileTrack): Promise<number> {
+  async addTrack(track: PlaylistFileTrack): Promise<{ id: string; trackCount: number }> {
     const current = this.getPlaylist();
-    current.push(track);
-    return this.setPlaylist(current);
+    const id = track.id || crypto.randomUUID();
+    current.push({ ...track, id });
+    const trackCount = await this.setPlaylist(current);
+    return { id, trackCount };
   }
 
   async removeTrack(id: string): Promise<number> {
