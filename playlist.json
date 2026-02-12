@@ -3,6 +3,12 @@
     {
       "type": "file",
       "path": "music/test128.mp3"
+    },
+    {
+      "type": "url",
+      "url": "https://yambal.github.io/rasp-cast/online_demo.mp3",
+      "title": "Online Demo",
+      "artist": "Rasp-Cast"
     }
   ]
 }
