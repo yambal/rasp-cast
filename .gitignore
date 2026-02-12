@@ -6,4 +6,5 @@ music/*.flac
 .env
 playlist.json
 schedule.json
+frontend/node_modules/
 .claude/

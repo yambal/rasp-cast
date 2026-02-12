@@ -34,6 +34,9 @@ async function main() {
   app.use(createInterruptRoutes(streamManager));
   app.use(createScheduleRoutes(scheduleManager));
 
+  // Serve frontend static files (production build)
+  app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
+
   app.listen(PORT, () => {
     console.log(`[rasp-cast] Server running on http://localhost:${PORT}`);
     console.log(`[rasp-cast] Stream URL: http://localhost:${PORT}/stream`);
