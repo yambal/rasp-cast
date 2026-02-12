@@ -19,7 +19,28 @@ npm install
 npm run dev
 ```
 
-`http://localhost:3000/stream` をブラウザや VLC で開けば再生が始まります。
+- ストリーム: `http://localhost:3000/stream`（ブラウザや VLC で再生）
+- ダッシュボード: `http://localhost:3000/`
+
+## 環境変数
+
+`.env` ファイルまたは環境変数で設定:
+
+| 変数 | 説明 | デフォルト |
+|---|---|---|
+| `API_KEY` | 管理 API の認証トークン | 未設定（認証なし） |
+| `PORT` | サーバーポート | `3000` |
+| `MUSIC_DIR` | MP3 ファイルディレクトリ | `music` |
+| `STATION_NAME` | 局名（ダッシュボード・ICY ヘッダー・ETS2 表示） | `YOUR STATION` |
+| `PUBLIC_STREAM_URL` | 外部公開用ストリーム URL（ダッシュボードのプレイヤーに使用） | 空 |
+
+`.env` の例:
+
+```bash
+API_KEY=your-secret-key
+STATION_NAME=FM ETS2 JP
+PUBLIC_STREAM_URL=http://your-server:8000/stream
+```
 
 ## プレイリスト
 
@@ -45,8 +66,9 @@ npm run dev
 | メソッド | URL | 説明 |
 |---|---|---|
 | GET | `/stream` | MP3 ストリーム（ICY メタデータ対応） |
-| GET | `/status` | 配信状態（バージョン、リスナー数、現在の曲） |
+| GET | `/status` | 配信状態（バージョン、リスナー数、現在の曲、局名、ストリーム URL） |
 | GET | `/playlist` | プレイリスト取得（各トラックに UUID 付き） |
+| GET | `/schedule` | スケジュール番組一覧（次回実行時刻付き） |
 
 ### 管理エンドポイント（`Authorization: Bearer <API_KEY>` 必須）
 
@@ -57,15 +79,39 @@ npm run dev
 | PUT | `/playlist` | プレイリスト全体を置換 |
 | POST | `/playlist/tracks` | トラック追加（UUID 自動付与、レスポンスに `id` を返却） |
 | DELETE | `/playlist/tracks/:id` | UUID 指定でトラック削除 |
+| POST | `/interrupt` | 割り込み再生（現在の曲を中断し、指定トラック再生後に復帰） |
+| POST | `/schedule/programs` | スケジュール番組追加 |
+| DELETE | `/schedule/programs/:id` | スケジュール番組削除 |
 
-### 認証設定
+### 割り込み再生
 
-環境変数 `API_KEY` または `.env` ファイルで設定します。未設定時は全リクエスト許可（開発用）。
+現在の曲を中断し、指定トラックを再生後、プレイリストに復帰します:
 
 ```bash
-cp .env.example .env
-# .env を編集して API_KEY を設定
+curl -X POST http://localhost:3000/interrupt \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"type": "file", "path": "music/jingle.mp3", "title": "Jingle"}'
 ```
+
+### スケジュール番組
+
+cron 式で指定した時刻にトラックを自動で割り込み再生します。タイムゾーンは Asia/Tokyo です。
+
+```bash
+# 毎時 0 分にジングルを再生
+curl -X POST http://localhost:3000/schedule/programs \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "毎時ジングル",
+    "cron": "0 * * * *",
+    "track": { "type": "file", "path": "music/jingle.mp3", "title": "Jingle" },
+    "enabled": true
+  }'
+```
+
+スケジュールは `schedule.json` に永続化されます。
 
 ## Raspberry Pi デプロイ
 
@@ -86,10 +132,14 @@ sudo bash scripts/setup.sh
 3. systemd サービス登録 + 自動起動有効化
 4. ファイアウォール開放（ufw がある場合）
 
-### API キー設定
+### 環境変数設定
 
 ```bash
-echo "API_KEY=your-secret-key" > /mnt/usbdata/rasp-cast/.env
+cat > /mnt/usbdata/rasp-cast/.env <<EOF
+API_KEY=your-secret-key
+STATION_NAME=FM ETS2 JP
+PUBLIC_STREAM_URL=http://your-server:8000/stream
+EOF
 sudo systemctl restart rasp-cast
 ```
 
@@ -105,14 +155,15 @@ journalctl -u rasp-cast -f        # ログ確認
 
 ### 自動更新
 
-systemd の `ExecStartPre` で起動前に `git pull && npm install` を実行します。Pi を再起動するだけで最新版に更新されます。
+systemd の `ExecStartPre` で起動前に `git pull --ff-only && npm install --omit=dev` を実行します。Pi を再起動（またはサービス再起動）するだけで最新版に更新されます。
+
+バックエンドの `dist/` はリポジトリにコミット済みのため、Pi 側で TypeScript のビルドは不要です。
 
 ### 更新手順（手動）
 
 ```bash
 cd /mnt/usbdata/rasp-cast
 git pull
-npm install
 sudo systemctl restart rasp-cast
 ```
 
@@ -135,7 +186,7 @@ nginx 設定のポイント:
 `Documents\Euro Truck Simulator 2\live_streams.sii` に追加:
 
 ```
-stream_data[]: "http://<IP>:<PORT>/stream|Rasp-Cast|Mixed|JP|128|0"
+stream_data[]: "http://<IP>:<PORT>/stream|<局名>|Mixed|JP|128|0"
 ```
 
 フォーマット: `URL|局名|ジャンル|言語|ビットレート|お気に入りフラグ`
