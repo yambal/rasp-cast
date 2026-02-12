@@ -21,3 +21,21 @@ export interface StatusResponse {
 export interface PlaylistResponse {
   tracks: Track[];
 }
+
+export interface ScheduleProgram {
+  id: string;
+  name: string;
+  cron: string;
+  track: {
+    type: 'file' | 'url';
+    path?: string;
+    url?: string;
+    title?: string;
+    artist?: string;
+  };
+  enabled: boolean;
+}
+
+export interface ScheduleResponse {
+  programs: ScheduleProgram[];
+}

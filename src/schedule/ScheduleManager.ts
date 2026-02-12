@@ -126,7 +126,7 @@ export class ScheduleManager {
       this.streamManager.interrupt(program.track).catch((err) => {
         console.error(`[ScheduleManager] Interrupt failed for "${program.name}":`, err.message);
       });
-    });
+    }, { timezone: 'Asia/Tokyo' });
 
     this.cronJobs.set(program.id, task);
   }

@@ -1,4 +1,4 @@
-import type { StatusResponse, PlaylistResponse } from './types';
+import type { StatusResponse, PlaylistResponse, ScheduleResponse } from './types';
 
 export async function fetchStatus(): Promise<StatusResponse> {
   const res = await fetch('/status');
@@ -10,16 +10,7 @@ export async function fetchPlaylist(): Promise<PlaylistResponse> {
   return res.json();
 }
 
-export async function skipTrack(apiKey: string): Promise<void> {
-  await fetch('/skip', {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
-}
-
-export async function skipToTrack(apiKey: string, id: string): Promise<void> {
-  await fetch(`/skip/${id}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${apiKey}` },
-  });
+export async function fetchSchedule(): Promise<ScheduleResponse> {
+  const res = await fetch('/schedule');
+  return res.json();
 }
