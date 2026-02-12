@@ -2,10 +2,11 @@ import { Box, Text, Code, Link } from '@chakra-ui/react';
 
 interface Props {
   streamUrl: string;
+  stationName: string;
 }
 
-export function HowToListen({ streamUrl }: Props) {
-  const ets2Line = `stream_data[]: "${streamUrl}|Rasp-Cast|Mixed|JP|128|1"`;
+export function HowToListen({ streamUrl, stationName }: Props) {
+  const ets2Line = `stream_data[]: "${streamUrl}|${stationName}|Mixed|JP|128|1"`;
 
   return (
     <Box>

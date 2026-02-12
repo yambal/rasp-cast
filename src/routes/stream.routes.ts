@@ -3,6 +3,8 @@ import { ICY_METAINT } from '../stream/IcyMetadata.js';
 import type { StreamManager } from '../stream/StreamManager.js';
 import { requireApiKey } from '../middleware/auth.js';
 
+const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
+
 export function createStreamRoutes(streamManager: StreamManager): Router {
   const router = Router();
 
@@ -20,7 +22,7 @@ export function createStreamRoutes(streamManager: StreamManager): Router {
       'Connection': 'keep-alive',
       'Cache-Control': 'no-cache, no-store',
       'Pragma': 'no-cache',
-      'icy-name': 'Rasp-Cast',
+      'icy-name': STATION_NAME,
       'icy-genre': 'Mixed',
       'icy-br': '128',
       'icy-pub': '0',
@@ -40,7 +42,7 @@ export function createStreamRoutes(streamManager: StreamManager): Router {
   router.get('/status', (_req, res) => {
     const status = streamManager.getStatus();
     const streamUrl = process.env.PUBLIC_STREAM_URL || '';
-    res.json({ ...status, streamUrl });
+    res.json({ ...status, streamUrl, stationName: STATION_NAME });
   });
 
   /**

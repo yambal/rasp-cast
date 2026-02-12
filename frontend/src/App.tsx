@@ -10,10 +10,11 @@ export function App() {
   const status = useStatus();
   const programs = useSchedule();
   const streamUrl = status?.streamUrl;
+  const stationName = status?.stationName || 'YOUR STATION';
 
   return (
     <Container maxW="container.sm" py={6}>
-      <Heading size="md" mb={4}>Rasp-Cast</Heading>
+      <Heading size="md" mb={4}>{stationName}</Heading>
 
       <Flex direction="column" gap={5}>
         <StatusBar status={status} />
@@ -28,7 +29,7 @@ export function App() {
 
         <ScheduleView programs={programs} />
 
-        {streamUrl && <HowToListen streamUrl={streamUrl} />}
+        {streamUrl && <HowToListen streamUrl={streamUrl} stationName={stationName} />}
       </Flex>
     </Container>
   );
