@@ -42,11 +42,21 @@ export function createStreamRoutes(streamManager: StreamManager): Router {
   });
 
   /**
-   * POST /skip - 曲をスキップ (デバッグ用)
+   * POST /skip - 次の曲へスキップ
+   * POST /skip/:id - 指定 ID の曲へスキップ
    */
-  router.post('/skip', requireApiKey, (_req, res) => {
-    streamManager.skip();
-    res.json({ ok: true, message: 'Skipping to next track' });
+  router.post('/skip/:id?', requireApiKey, (req, res) => {
+    if (req.params.id) {
+      const found = streamManager.skipTo(req.params.id as string);
+      if (!found) {
+        res.status(404).json({ error: `Track not found: ${req.params.id}` });
+        return;
+      }
+      res.json({ ok: true, message: `Skipping to track ${req.params.id}` });
+    } else {
+      streamManager.skip();
+      res.json({ ok: true, message: 'Skipping to next track' });
+    }
   });
 
   return router;

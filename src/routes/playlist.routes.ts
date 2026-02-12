@@ -49,19 +49,14 @@ export function createPlaylistRoutes(streamManager: StreamManager): Router {
   });
 
   /**
-   * DELETE /playlist/tracks/:index — トラック削除
+   * DELETE /playlist/tracks/:id — トラック削除 (UUID 指定)
    */
-  router.delete('/playlist/tracks/:index', requireApiKey, async (req, res) => {
+  router.delete('/playlist/tracks/:id', requireApiKey, async (req, res) => {
     try {
-      const index = parseInt(req.params.index as string, 10);
-      if (isNaN(index)) {
-        res.status(400).json({ error: 'Invalid index' });
-        return;
-      }
-      const count = await streamManager.removeTrack(index);
+      const count = await streamManager.removeTrack(req.params.id as string);
       res.json({ ok: true, trackCount: count });
     } catch (err: any) {
-      res.status(400).json({ error: err.message });
+      res.status(404).json({ error: err.message });
     }
   });
 

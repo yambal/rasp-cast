@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
@@ -17,6 +18,7 @@ interface ClientConnection {
 }
 
 interface TrackInfo {
+  id: string;
   type: 'file' | 'url';
   title: string;
   artist: string;
@@ -28,6 +30,7 @@ interface TrackInfo {
 }
 
 interface PlaylistFileTrack {
+  id?: string;
   type: 'file' | 'url';
   path?: string;
   url?: string;
@@ -100,9 +103,10 @@ export class StreamManager {
           }
         }
 
-        this.tracks.push({ type: 'file', filePath, filename, title, artist });
+        this.tracks.push({ id: entry.id || crypto.randomUUID(), type: 'file', filePath, filename, title, artist });
       } else if (entry.type === 'url' && entry.url) {
         this.tracks.push({
+          id: entry.id || crypto.randomUUID(),
           type: 'url',
           url: entry.url,
           title: entry.title || 'Unknown',
@@ -131,7 +135,7 @@ export class StreamManager {
         // ID3 読取失敗時はファイル名をフォールバック
       }
 
-      this.tracks.push({ type: 'file', filePath, title, artist, filename: file });
+      this.tracks.push({ id: crypto.randomUUID(), type: 'file', filePath, title, artist, filename: file });
     }
 
     console.log(`[StreamManager] Scanned ${this.tracks.length} tracks from directory`);
@@ -176,13 +180,22 @@ export class StreamManager {
     }
   }
 
+  skipTo(id: string): boolean {
+    const index = this.tracks.findIndex((t) => t.id === id);
+    if (index === -1) return false;
+    // 指定トラックの1つ前にセット（skip後に+1されるため）
+    this.currentIndex = index === 0 ? this.tracks.length - 1 : index - 1;
+    this.skip();
+    return true;
+  }
+
   getStatus() {
     return {
       version,
       isStreaming: this.isStreaming,
       listeners: this.clients.size,
       currentTrack: this.currentTrack
-        ? { title: this.currentTrack.title, artist: this.currentTrack.artist, filename: this.currentTrack.filename }
+        ? { id: this.currentTrack.id, title: this.currentTrack.title, artist: this.currentTrack.artist, filename: this.currentTrack.filename }
         : null,
       totalTracks: this.tracks.length,
       currentIndex: this.currentIndex,
@@ -195,9 +208,9 @@ export class StreamManager {
         const rel = t.filePath
           ? path.relative(path.join(this.musicDir, '..'), t.filePath).replace(/\\/g, '/')
           : undefined;
-        return { type: 'file' as const, path: rel, title: t.title, artist: t.artist };
+        return { id: t.id, type: 'file' as const, path: rel, title: t.title, artist: t.artist };
       }
-      return { type: 'url' as const, url: t.url, title: t.title, artist: t.artist };
+      return { id: t.id, type: 'url' as const, url: t.url, title: t.title, artist: t.artist };
     });
   }
 
@@ -216,10 +229,11 @@ export class StreamManager {
     return this.setPlaylist(current);
   }
 
-  async removeTrack(index: number): Promise<number> {
+  async removeTrack(id: string): Promise<number> {
     const current = this.getPlaylist();
-    if (index < 0 || index >= current.length) {
-      throw new Error(`Invalid track index: ${index}`);
+    const index = current.findIndex((t) => t.id === id);
+    if (index === -1) {
+      throw new Error(`Track not found: ${id}`);
     }
     current.splice(index, 1);
     // 削除位置に応じて currentIndex を調整
