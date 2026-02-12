@@ -105,12 +105,28 @@ sudo systemctl status rasp-cast   # 状態確認
 journalctl -u rasp-cast -f        # ログ確認
 ```
 
-### 確認用エンドポイント
-| URL | 説明 |
-|---|---|
-| `http://<IP>:3000/stream` | MP3 ストリーム |
-| `http://<IP>:3000/status` | JSON ステータス（リスナー数、現在の曲） |
-| `POST http://<IP>:3000/skip` | 曲スキップ |
+### API エンドポイント
+
+#### 公開（認証不要）
+| メソッド | URL | 説明 |
+|---|---|---|
+| GET | `/stream` | MP3 ストリーム（ICY 対応） |
+| GET | `/status` | JSON ステータス（バージョン、リスナー数、現在の曲） |
+| GET | `/playlist` | プレイリスト取得（各トラックに UUID 付き） |
+
+#### 管理（`Authorization: Bearer <API_KEY>` 必須）
+| メソッド | URL | 説明 |
+|---|---|---|
+| POST | `/skip` | 次の曲へスキップ |
+| POST | `/skip/:id` | 指定 ID の曲へジャンプ |
+| PUT | `/playlist` | プレイリスト全体を置換 |
+| POST | `/playlist/tracks` | トラック追加（UUID 自動付与） |
+| DELETE | `/playlist/tracks/:id` | UUID 指定でトラック削除 |
+
+#### 認証設定
+- 環境変数 `API_KEY` で設定（`.env` ファイル対応）
+- 未設定時は全リクエスト許可（開発用）
+- Pi: `/mnt/usbdata/rasp-cast/.env` に保存
 
 ## 外部公開（Oracle Cloud VPS リレー）
 
@@ -165,13 +181,18 @@ rasp-cast/
 ├── package.json
 ├── tsconfig.json
 ├── .gitignore
+├── .env.example              # 環境変数サンプル（API_KEY）
+├── playlist.json             # プレイリスト定義（UUID 付き）
 ├── src/
-│   ├── index.ts              # Express 起動 + music/ スキャン
+│   ├── index.ts              # Express 起動 + プレイリスト読み込み
 │   ├── stream/
-│   │   ├── StreamManager.ts  # MP3 連続送信 + レート制御 + クライアント管理
+│   │   ├── StreamManager.ts  # MP3 連続送信 + レート制御 + プレイリスト管理
 │   │   └── IcyMetadata.ts    # ICY メタデータブロック生成・挿入
-│   └── routes/
-│       └── stream.routes.ts  # GET /stream, GET /status, POST /skip
+│   ├── routes/
+│   │   ├── stream.routes.ts  # GET /stream, GET /status, POST /skip
+│   │   └── playlist.routes.ts # プレイリスト CRUD API
+│   └── middleware/
+│       └── auth.ts           # API キー認証ミドルウェア
 ├── scripts/
 │   ├── setup.sh              # Raspberry Pi セットアップ
 │   ├── start.sh              # systemctl start
@@ -198,8 +219,12 @@ rasp-cast/
 - [x] ETS2 再生確認（外部公開 URL 経由）
 - [x] Pi 再起動後の自動復旧確認
 
-### Step 3: バックエンド API — 未着手
-- [ ] プレイリスト CRUD API（作成・取得・更新・削除）
+### Step 3: バックエンド API — 進行中
+- [x] プレイリスト CRUD API（取得・全置換・追加・削除）
+- [x] UUID によるトラック識別（追加時自動付与、playlist.json に永続化）
+- [x] API キー認証（Bearer token、管理系エンドポイントのみ）
+- [x] .env ファイル対応（systemd EnvironmentFile）
+- [x] URL ベーストラック対応（ローカルファイルと共存）
 - [ ] ライブラリ管理 API（music/ 内のファイル一覧・メタデータ取得）
 - [ ] 設定変更 API（ビットレート・ポート等）
 - [ ] ファイルアップロード API（MP3 アップロード → music/ に保存）
@@ -211,7 +236,7 @@ rasp-cast/
 - [ ] ライブラリ管理画面（ファイル一覧・アップロード）
 - [ ] ETS2 設定スニペット自動生成
 
-### Step 5: 本番運用 — 未着手
+### Step 5: 本番運用 — 一部着手
 - [ ] フロントエンドを VPS 経由で HTTPS 配信（Cloudflare Tunnel or Let's Encrypt）
-- [ ] 認証・アクセス制限（管理画面のみ）
+- [x] API キー認証（管理系エンドポイント保護済み）
 - [ ] ログ・監視（n8n ヘルスチェック連携）
