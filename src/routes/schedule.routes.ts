@@ -2,6 +2,13 @@ import { Router } from 'express';
 import type { ScheduleManager } from '../schedule/ScheduleManager.js';
 import { requireApiKey } from '../middleware/auth.js';
 
+function validateTrack(track: any): boolean {
+  return track && track.type && (
+    (track.type === 'file' && track.path) ||
+    (track.type === 'url' && track.url)
+  );
+}
+
 export function createScheduleRoutes(scheduleManager: ScheduleManager): Router {
   const router = Router();
 
@@ -14,20 +21,25 @@ export function createScheduleRoutes(scheduleManager: ScheduleManager): Router {
 
   /**
    * POST /schedule/programs — 番組追加
-   * Body: { name, cron, track: { type, path?, url?, title?, artist? }, enabled? }
+   * Body: { name, cron, tracks: [{ type, path?, url?, title?, artist? }], enabled? }
+   * 後方互換: track (単一) も受付
    */
   router.post('/schedule/programs', requireApiKey, (req, res) => {
     try {
-      const { name, cron, track, enabled } = req.body;
-      if (!name || !cron || !track) {
-        res.status(400).json({ error: 'name, cron, and track are required' });
+      const { name, cron, tracks: rawTracks, track, enabled } = req.body;
+      // 後方互換: track (単一) → tracks (配列)
+      const tracks = rawTracks || (track ? [track] : null);
+      if (!name || !cron || !tracks || !Array.isArray(tracks) || tracks.length === 0) {
+        res.status(400).json({ error: 'name, cron, and tracks (array) are required' });
         return;
       }
-      if (!track.type || (track.type === 'file' && !track.path) || (track.type === 'url' && !track.url)) {
-        res.status(400).json({ error: 'Invalid track: type with path (file) or url (url) required' });
-        return;
+      for (const t of tracks) {
+        if (!validateTrack(t)) {
+          res.status(400).json({ error: 'Invalid track: type with path (file) or url (url) required' });
+          return;
+        }
       }
-      const program = scheduleManager.addProgram({ name, cron, track, enabled });
+      const program = scheduleManager.addProgram({ name, cron, tracks, enabled });
       res.json({ ok: true, program });
     } catch (err: any) {
       res.status(400).json({ error: err.message });

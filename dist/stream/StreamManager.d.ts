@@ -19,7 +19,7 @@ export declare class StreamManager {
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     private targetBitrate;
     /** 割り込み再生用 */
-    private interruptTrack;
+    private interruptTracks;
     private isPlayingInterrupt;
     constructor(musicDir: string);
     loadPlaylist(playlistPath: string): Promise<number>;
@@ -28,8 +28,8 @@ export declare class StreamManager {
     private scanMusicDir;
     addClient(res: Response, wantsMetadata: boolean): void;
     startStreaming(): Promise<void>;
-    /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを再生後プレイリストに復帰 */
-    interrupt(trackInput: PlaylistFileTrack): Promise<void>;
+    /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを順次再生後プレイリストに復帰 */
+    interrupt(trackInputs: PlaylistFileTrack | PlaylistFileTrack[]): Promise<void>;
     private playInterrupt;
     skip(): void;
     skipTo(id: string): boolean;

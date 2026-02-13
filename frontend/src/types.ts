@@ -24,17 +24,19 @@ export interface PlaylistResponse {
   tracks: Track[];
 }
 
+export interface ScheduleTrack {
+  type: 'file' | 'url';
+  path?: string;
+  url?: string;
+  title?: string;
+  artist?: string;
+}
+
 export interface ScheduleProgram {
   id: string;
   name: string;
   cron: string;
-  track: {
-    type: 'file' | 'url';
-    path?: string;
-    url?: string;
-    title?: string;
-    artist?: string;
-  };
+  tracks: ScheduleTrack[];
   enabled: boolean;
   nextRun: string | null;
 }

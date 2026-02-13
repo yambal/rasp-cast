@@ -11,13 +11,26 @@ export class ScheduleManager {
         this.schedulePath = schedulePath;
         this.streamManager = streamManager;
     }
-    /** schedule.json を読み込み、有効なジョブを登録 */
+    /** schedule.json を読み込み、有効なジョブを登録（旧 track → tracks 自動マイグレーション） */
     load() {
         if (fs.existsSync(this.schedulePath)) {
             try {
                 const raw = fs.readFileSync(this.schedulePath, 'utf-8');
                 const data = JSON.parse(raw);
-                this.programs = data.programs || [];
+                let needsSave = false;
+                this.programs = (data.programs || []).map((p) => {
+                    // 旧形式: track (単一) → tracks (配列) に変換
+                    if (p.track && !p.tracks) {
+                        p.tracks = [p.track];
+                        delete p.track;
+                        needsSave = true;
+                    }
+                    return p;
+                });
+                if (needsSave) {
+                    this.save();
+                    console.log('[ScheduleManager] Migrated schedule.json: track → tracks');
+                }
             }
             catch (err) {
                 console.error('[ScheduleManager] Failed to parse schedule.json:', err);
@@ -59,7 +72,7 @@ export class ScheduleManager {
             id: crypto.randomUUID(),
             name: input.name,
             cron: input.cron,
-            track: input.track,
+            tracks: input.tracks,
             enabled: input.enabled !== undefined ? input.enabled : true,
         };
         this.programs.push(program);
@@ -114,7 +127,7 @@ export class ScheduleManager {
         }
         const task = cron.schedule(program.cron, () => {
             console.log(`[ScheduleManager] Triggering program: ${program.name}`);
-            this.streamManager.interrupt(program.track).catch((err) => {
+            this.streamManager.interrupt(program.tracks).catch((err) => {
                 console.error(`[ScheduleManager] Interrupt failed for "${program.name}":`, err.message);
             });
         }, { timezone: 'Asia/Tokyo' });

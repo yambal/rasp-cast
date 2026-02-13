@@ -20,7 +20,7 @@ export class StreamManager {
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     targetBitrate = 128; // kbps
     /** 割り込み再生用 */
-    interruptTrack = null;
+    interruptTracks = [];
     isPlayingInterrupt = false;
     constructor(musicDir) {
         this.musicDir = musicDir;
@@ -138,30 +138,33 @@ export class StreamManager {
         console.log('[StreamManager] Streaming started');
         while (this.isStreaming) {
             // 割り込みトラックが待機中ならプレイリストより先に再生
-            if (this.interruptTrack) {
+            if (this.interruptTracks.length > 0) {
                 await this.playInterrupt();
                 continue;
             }
             await this.playTrack(this.tracks[this.currentIndex]);
             // 割り込みで中断された場合は次の曲へ進める
-            if (this.interruptTrack) {
+            if (this.interruptTracks.length > 0) {
                 this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
                 continue;
             }
             this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
         }
     }
-    /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを再生後プレイリストに復帰 */
-    async interrupt(trackInput) {
-        const track = await this.buildTrackInfo(trackInput);
-        this.interruptTrack = track;
+    /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを順次再生後プレイリストに復帰 */
+    async interrupt(trackInputs) {
+        const inputs = Array.isArray(trackInputs) ? trackInputs : [trackInputs];
+        const tracks = [];
+        for (const input of inputs) {
+            tracks.push(await this.buildTrackInfo(input));
+        }
+        this.interruptTracks = tracks;
         this.skip();
     }
     async playInterrupt() {
-        while (this.interruptTrack) {
-            const track = this.interruptTrack;
-            this.interruptTrack = null;
-            this.isPlayingInterrupt = true;
+        this.isPlayingInterrupt = true;
+        while (this.interruptTracks.length > 0) {
+            const track = this.interruptTracks.shift();
             console.log(`[StreamManager] Playing interrupt: ${track.title}`);
             await this.playTrack(track);
         }

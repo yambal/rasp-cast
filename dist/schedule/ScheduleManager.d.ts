@@ -3,7 +3,7 @@ interface ScheduledProgram {
     id: string;
     name: string;
     cron: string;
-    track: PlaylistFileTrack;
+    tracks: PlaylistFileTrack[];
     enabled: boolean;
 }
 export type { ScheduledProgram };
@@ -13,7 +13,7 @@ export declare class ScheduleManager {
     private schedulePath;
     private streamManager;
     constructor(schedulePath: string, streamManager: StreamManager);
-    /** schedule.json を読み込み、有効なジョブを登録 */
+    /** schedule.json を読み込み、有効なジョブを登録（旧 track → tracks 自動マイグレーション） */
     load(): number;
     getPrograms(): ScheduledProgram[];
     getProgramsWithNextRun(): (ScheduledProgram & {

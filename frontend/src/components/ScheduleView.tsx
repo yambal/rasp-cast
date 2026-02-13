@@ -1,5 +1,5 @@
 import { Box, Text, Flex, Badge } from '@chakra-ui/react';
-import type { ScheduleProgram } from '../types';
+import type { ScheduleProgram, ScheduleTrack } from '../types';
 
 interface Props {
   programs: ScheduleProgram[];
@@ -14,6 +14,10 @@ function formatNextRun(iso: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function trackLabel(t: ScheduleTrack): string {
+  return t.title ?? t.url ?? t.path ?? '(unknown)';
 }
 
 export function ScheduleView({ programs }: Props) {
@@ -40,7 +44,9 @@ export function ScheduleView({ programs }: Props) {
                 {p.name}
               </Text>
               <Text fontSize="xs" color="fg.muted" truncate>
-                {p.track.title ?? p.track.url ?? p.track.path}
+                {p.tracks.length === 1
+                  ? trackLabel(p.tracks[0])
+                  : `${p.tracks.length} tracks`}
               </Text>
             </Box>
             <Flex direction="column" align="flex-end" ml={2}>
