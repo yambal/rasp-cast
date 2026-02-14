@@ -87,6 +87,26 @@ export class ScheduleManager {
     if (!cron.validate(input.cron)) {
       throw new Error(`Invalid cron expression: ${input.cron}`);
     }
+
+    // 同じ cron 式の既存番組があれば上書き
+    const existingIndex = this.programs.findIndex((p) => p.cron === input.cron);
+    if (existingIndex !== -1) {
+      const existing = this.programs[existingIndex];
+      const program: ScheduledProgram = {
+        id: existing.id,
+        name: input.name,
+        cron: input.cron,
+        tracks: input.tracks,
+        enabled: input.enabled !== undefined ? input.enabled : true,
+      };
+      this.programs[existingIndex] = program;
+      this.save();
+      this.unregisterJob(existing.id);
+      this.registerJob(program);
+      console.log(`[ScheduleManager] Overwritten program "${existing.name}" → "${program.name}" (same cron: ${input.cron})`);
+      return program;
+    }
+
     const program: ScheduledProgram = {
       id: crypto.randomUUID(),
       name: input.name,
