@@ -8,13 +8,27 @@
  */
 const ICY_METAINT = 8192;
 export { ICY_METAINT };
+/**
+ * FMOD 互換のためタイトル文字列をサニタイズ
+ * - 制御文字、非 ASCII 文字を除去（FMOD クラッシュ防止）
+ * - シングルクォートを除去（ICY プロトコル区切り文字）
+ * - 128 文字に制限
+ */
+function sanitizeTitle(title) {
+    return title
+        .replace(/'/g, '') // シングルクォート除去
+        .replace(/[\x00-\x1F]/g, '') // 制御文字除去
+        .replace(/[^\x20-\x7E]/g, '') // 非 ASCII 除去
+        .slice(0, 128);
+}
 export function createIcyMetadataBlock(title) {
     if (!title) {
         // メタデータなし: 長さ0の1バイト
         return Buffer.alloc(1, 0);
     }
-    const text = `StreamTitle='${title}';`;
-    const textBytes = Buffer.from(text, 'utf-8');
+    const safe = sanitizeTitle(title);
+    const text = `StreamTitle='${safe}';`;
+    const textBytes = Buffer.from(text, 'ascii');
     const paddedLength = Math.ceil(textBytes.length / 16) * 16;
     const block = Buffer.alloc(1 + paddedLength, 0);
     block[0] = paddedLength / 16;

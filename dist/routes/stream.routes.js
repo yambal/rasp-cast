@@ -25,6 +25,8 @@ export function createStreamRoutes(streamManager) {
         if (wantsMetadata) {
             headers['icy-metaint'] = String(ICY_METAINT);
         }
+        // Nagle アルゴリズム無効化: 小チャンクの送信遅延を排除
+        res.socket?.setNoDelay(true);
         res.writeHead(200, headers);
         streamManager.addClient(res, wantsMetadata);
     });

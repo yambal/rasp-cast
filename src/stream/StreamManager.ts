@@ -400,7 +400,7 @@ export class StreamManager {
       const actualTime = Date.now() - startTime;
       const delay = expectedTime - actualTime;
 
-      if (delay > 50) {
+      if (delay > 200) {
         stream.pause();
         setTimeout(() => {
           if (!signal.aborted) stream.resume();
