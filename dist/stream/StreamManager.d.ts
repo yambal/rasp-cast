@@ -18,11 +18,6 @@ export declare class StreamManager {
     private abortController;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     private targetBitrate;
-    /** レート倍率（1.0 = ぴったり、1.05 = 5%速め でバッファ余裕を持たせる） */
-    private rateMultiplier;
-    /** Burst on connect: 新規クライアントに送る初期バーストバッファ (128kbps × 4秒 ≈ 64KB) */
-    private burstBuffer;
-    private readonly burstSize;
     /** 割り込み再生用 */
     private interruptTracks;
     private isPlayingInterrupt;
