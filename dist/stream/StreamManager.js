@@ -19,6 +19,11 @@ export class StreamManager {
     abortController = null;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     targetBitrate = 128; // kbps
+    /** レート倍率（1.0 = ぴったり、1.05 = 5%速め でバッファ余裕を持たせる） */
+    rateMultiplier = 1.05;
+    /** Burst on connect: 新規クライアントに送る初期バーストバッファ (128kbps × 4秒 ≈ 64KB) */
+    burstBuffer = Buffer.alloc(0);
+    burstSize = 65536; // bytes
     /** 割り込み再生用 */
     interruptTracks = [];
     isPlayingInterrupt = false;
@@ -122,6 +127,16 @@ export class StreamManager {
         };
         this.clients.add(client);
         console.log(`[StreamManager] Client connected (metadata=${wantsMetadata}). Total: ${this.clients.size}`);
+        // Burst on connect: バッファ済みデータを即送信してプレイヤーのバッファを素早く満たす
+        if (this.burstBuffer.length > 0) {
+            try {
+                res.write(this.burstBuffer);
+                console.log(`[StreamManager] Burst sent: ${this.burstBuffer.length} bytes`);
+            }
+            catch {
+                // 送信失敗は無視
+            }
+        }
         res.on('close', () => {
             this.clients.delete(client);
             console.log(`[StreamManager] Client disconnected. Total: ${this.clients.size}`);
@@ -316,9 +331,9 @@ export class StreamManager {
         }
     }
     streamWithRateControl(stream, signal, resolve, label) {
-        // ビットレートに合わせた送信レート制御
-        // 128kbps = 16000 bytes/sec → 16384 bytes chunk ≈ 1.024 sec
-        const bytesPerSecond = (this.targetBitrate * 1000) / 8;
+        // ビットレートに合わせた送信レート制御（rateMultiplier で少し速めに送りバッファ余裕を確保）
+        // 128kbps × 1.05 = 134.4kbps ≈ 16800 bytes/sec
+        const bytesPerSecond = ((this.targetBitrate * 1000) / 8) * this.rateMultiplier;
         let totalBytesSent = 0;
         const startTime = Date.now();
         stream.on('data', (chunk) => {
@@ -349,6 +364,11 @@ export class StreamManager {
         });
     }
     broadcast(chunk) {
+        // バーストバッファに蓄積（最新 burstSize バイトを保持）
+        this.burstBuffer = Buffer.concat([this.burstBuffer, chunk]);
+        if (this.burstBuffer.length > this.burstSize) {
+            this.burstBuffer = this.burstBuffer.subarray(this.burstBuffer.length - this.burstSize);
+        }
         for (const client of this.clients) {
             if (client.res.destroyed) {
                 this.clients.delete(client);
