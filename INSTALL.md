@@ -80,7 +80,8 @@ PUBLIC_STREAM_URL=http://your-server:8000/stream
 | POST | `/playlist/tracks` | トラック追加（UUID 自動付与、レスポンスに `id` を返却） |
 | DELETE | `/playlist/tracks/:id` | UUID 指定でトラック削除 |
 | POST | `/interrupt` | 割り込み再生（現在の曲を中断し、指定トラック再生後に復帰） |
-| POST | `/schedule/programs` | スケジュール番組追加 |
+| POST | `/schedule/programs` | スケジュール番組追加（同一 cron は上書き） |
+| PUT | `/schedule/programs/:id` | スケジュール番組更新 |
 | DELETE | `/schedule/programs/:id` | スケジュール番組削除 |
 
 ### 割り込み再生
@@ -99,14 +100,14 @@ curl -X POST http://localhost:3000/interrupt \
 cron 式で指定した時刻にトラックを自動で割り込み再生します。タイムゾーンは Asia/Tokyo です。
 
 ```bash
-# 毎時 0 分にジングルを再生
+# 毎時 0 分にジングルを再生（同じ cron 式の番組が既にあれば上書き）
 curl -X POST http://localhost:3000/schedule/programs \
   -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "毎時ジングル",
     "cron": "0 * * * *",
-    "track": { "type": "file", "path": "music/jingle.mp3", "title": "Jingle" },
+    "tracks": [{ "type": "file", "path": "music/jingle.mp3", "title": "Jingle" }],
     "enabled": true
   }'
 ```

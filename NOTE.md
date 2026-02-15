@@ -110,9 +110,10 @@ journalctl -u rasp-cast -f        # ログ確認
 #### 公開（認証不要）
 | メソッド | URL | 説明 |
 |---|---|---|
-| GET | `/stream` | MP3 ストリーム（ICY 対応） |
+| GET | `/stream` | MP3 ストリーム（ICY 対応、TCP_NODELAY） |
 | GET | `/status` | JSON ステータス（バージョン、リスナー数、現在の曲） |
 | GET | `/playlist` | プレイリスト取得（各トラックに UUID 付き） |
+| GET | `/schedule` | スケジュール番組一覧（次回実行時刻付き） |
 
 #### 管理（`Authorization: Bearer <API_KEY>` 必須）
 | メソッド | URL | 説明 |
@@ -122,6 +123,10 @@ journalctl -u rasp-cast -f        # ログ確認
 | PUT | `/playlist` | プレイリスト全体を置換 |
 | POST | `/playlist/tracks` | トラック追加（UUID 自動付与） |
 | DELETE | `/playlist/tracks/:id` | UUID 指定でトラック削除 |
+| POST | `/interrupt` | 割り込み再生（単一 or 配列） |
+| POST | `/schedule/programs` | スケジュール番組追加（同一 cron は上書き） |
+| PUT | `/schedule/programs/:id` | スケジュール番組更新 |
+| DELETE | `/schedule/programs/:id` | スケジュール番組削除 |
 
 #### 認証設定
 - 環境変数 `API_KEY` で設定（`.env` ファイル対応）
@@ -164,6 +169,26 @@ sudo systemctl status nginx            # nginx
   → 空のルート表を IGW に関連付け、Default Route Table に 0.0.0.0/0 → IGW を設定
 - iptables でも同ポートを開放（`netfilter-persistent save` で永続化）
 
+## ETS2 / FMOD ストリーミング安定化 (v0.2.0)
+
+### FMOD Studio エンジンの特性
+- ETS2 は FMOD Studio（User-Agent: `FMODStudio/2.02.05`）でオーディオ再生
+- FMOD v1.37 以降に ICY メタデータ処理のバグあり（非 ASCII 文字やシングルクォートでクラッシュ）
+- HTTPS 非対応（内部で HTTP にストリップ、301 リダイレクト非追従）
+- バッファサイズが小さく、データ送り過ぎでオーバーフローする
+
+### 対策
+1. **ICY メタデータサニタイズ** — シングルクォート除去、制御文字除去、非 ASCII 除去、128 文字制限、ASCII エンコーディング
+2. **TCP_NODELAY** — Nagle アルゴリズム無効化で小チャンク送信遅延を排除
+3. **レート制御閾値** — pause/resume を 200ms 以上の遅延時のみ発動（50ms だと頻繁すぎて途切れる）
+4. **URL トラック無音フレーム** — fetch 待ちの間 26ms 間隔で無音 MP3 フレームを送信し、ストリーム切断を防止
+5. **fetch タイムアウト** — URL トラック取得に 10 秒制限。タイムアウト時は次のトラックへ
+
+### 失敗した対策
+- **Burst on connect（初回バースト）**: Icecast 方式で接続時に大量データを送信 → FMOD のバッファオーバーフローで悪化
+- **1.05x レート乗数**: ビットレートより少し速く送信 → 同様にバッファオーバーフロー
+- これらは IcyInterleaver のバイトカウントも狂わせるため、メタデータ同期も壊れた
+
 ## ハマりポイント
 
 ### USB メモリの権限
@@ -183,23 +208,36 @@ rasp-cast/
 ├── .gitignore
 ├── .env.example              # 環境変数サンプル（API_KEY）
 ├── playlist.json             # プレイリスト定義（UUID 付き）
+├── schedule.json             # スケジュール番組定義
 ├── src/
-│   ├── index.ts              # Express 起動 + プレイリスト読み込み
+│   ├── index.ts              # Express 起動 + プレイリスト・スケジュール読み込み
 │   ├── stream/
-│   │   ├── StreamManager.ts  # MP3 連続送信 + レート制御 + プレイリスト管理
-│   │   └── IcyMetadata.ts    # ICY メタデータブロック生成・挿入
+│   │   ├── StreamManager.ts  # MP3 連続送信 + レート制御 + プレイリスト管理 + 割り込み再生
+│   │   └── IcyMetadata.ts    # ICY メタデータブロック生成・挿入・サニタイズ
+│   ├── schedule/
+│   │   └── ScheduleManager.ts # cron スケジュール管理（node-cron, Asia/Tokyo）
 │   ├── routes/
 │   │   ├── stream.routes.ts  # GET /stream, GET /status, POST /skip
-│   │   └── playlist.routes.ts # プレイリスト CRUD API
+│   │   ├── playlist.routes.ts # プレイリスト CRUD API
+│   │   ├── interrupt.routes.ts # POST /interrupt（割り込み再生）
+│   │   └── schedule.routes.ts # スケジュール番組 CRUD API
 │   └── middleware/
 │       └── auth.ts           # API キー認証ミドルウェア
+├── dist/                     # TypeScript ビルド出力（git 管理、Pi はこちらを実行）
+├── frontend/                 # React + Vite + Chakra UI v3 ダッシュボード
+│   ├── src/
+│   └── dist/                 # ビルド済みフロントエンド（Express が自動配信）
 ├── scripts/
 │   ├── setup.sh              # Raspberry Pi セットアップ
 │   ├── start.sh              # systemctl start
 │   └── stop.sh               # systemctl stop
+├── docs/                     # ドキュメント・サンプル MP3
 ├── music/                    # MP3 ファイル配置（test*.mp3 のみ git 管理）
 │   └── test128.mp3           # テスト用音声
-└── NOTE.md                   # このファイル
+├── README.md                 # プロジェクト概要
+├── API.md                    # API リファレンス
+├── INSTALL.md                # インストール・デプロイガイド
+└── NOTE.md                   # このファイル（開発ノート）
 ```
 
 ## 進捗
@@ -219,24 +257,31 @@ rasp-cast/
 - [x] ETS2 再生確認（外部公開 URL 経由）
 - [x] Pi 再起動後の自動復旧確認
 
-### Step 3: バックエンド API — 進行中
+### Step 3: バックエンド API — 完了
 - [x] プレイリスト CRUD API（取得・全置換・追加・削除）
 - [x] UUID によるトラック識別（追加時自動付与、playlist.json に永続化）
 - [x] API キー認証（Bearer token、管理系エンドポイントのみ）
 - [x] .env ファイル対応（systemd EnvironmentFile）
 - [x] URL ベーストラック対応（ローカルファイルと共存）
-- [ ] ライブラリ管理 API（music/ 内のファイル一覧・メタデータ取得）
-- [ ] 設定変更 API（ビットレート・ポート等）
-- [ ] ファイルアップロード API（MP3 アップロード → music/ に保存）
+- [x] 割り込み再生 API（単一・配列対応、再生後プレイリスト復帰）
+- [x] スケジュール番組 CRUD API（cron 式、tracks 配列、同一 cron 上書き）
 
-### Step 4: フロントエンド（React + Chakra UI） — 未着手
-- [ ] Vite + React + TypeScript + Chakra UI セットアップ
-- [ ] ダッシュボード（Now Playing、リスナー数、スキップボタン）
-- [ ] プレイリスト管理画面
-- [ ] ライブラリ管理画面（ファイル一覧・アップロード）
-- [ ] ETS2 設定スニペット自動生成
+### Step 4: フロントエンド（React + Chakra UI） — 完了
+- [x] Vite + React + TypeScript + Chakra UI v3 セットアップ
+- [x] ダッシュボード（配信状態・リスナー数・ブラウザ内プレイヤー）
+- [x] スケジュール番組一覧（次回実行時刻表示）
+- [x] ETS2 設定スニペット表示
 
-### Step 5: 本番運用 — 一部着手
-- [ ] フロントエンドを VPS 経由で HTTPS 配信（Cloudflare Tunnel or Let's Encrypt）
+### Step 5: ETS2 ストリーミング安定化 — 完了 (v0.2.0)
+- [x] ICY メタデータサニタイズ（非 ASCII 除去、制御文字除去、128 文字制限）
+- [x] TCP_NODELAY（Nagle アルゴリズム無効化）
+- [x] レート制御安定化（pause/resume 閾値 50ms → 200ms）
+- [x] URL トラック fetch 中の無音 MP3 フレーム送信（ストリーム断防止）
+- [x] URL トラック fetch 10 秒タイムアウト
+
+### Step 6: 本番運用 — 一部着手
 - [x] API キー認証（管理系エンドポイント保護済み）
+- [ ] ライブラリ管理 API（music/ 内のファイル一覧・メタデータ取得）
+- [ ] ファイルアップロード API（MP3 アップロード → music/ に保存）
+- [ ] フロントエンドを VPS 経由で HTTPS 配信（Cloudflare Tunnel or Let's Encrypt）
 - [ ] ログ・監視（n8n ヘルスチェック連携）

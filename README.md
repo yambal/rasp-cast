@@ -110,7 +110,7 @@ ETS2 の制約:
 
 - **Backend**: Node.js + Express + TypeScript (ESM)
 - **Frontend**: React + Vite + Chakra UI v3
-- **Streaming**: 自前実装（ICY メタデータ、レート制御 128kbps）
+- **Streaming**: 自前実装（ICY メタデータ、レート制御 128kbps、ETS2/FMOD 互換メタデータサニタイズ）
 - **Schedule**: node-cron（Asia/Tokyo タイムゾーン）
 - **Data**: JSON ファイル（DB 不要）
 - **Deploy**: systemd + WireGuard + nginx

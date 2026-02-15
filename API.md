@@ -87,7 +87,7 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 
 ```json
 {
-  "version": "0.1.3",
+  "version": "0.2.0",
   "isStreaming": true,
   "isPlayingInterrupt": false,
   "listeners": 2,
@@ -319,7 +319,9 @@ UUID を指定してトラックを削除します。
 
 現在の曲を中断し、指定トラックを割り込み再生します。再生終了後はプレイリストに自動復帰します。
 
-### リクエスト
+単一トラックまたは配列で複数トラックを指定できます。
+
+### リクエスト（単一トラック）
 
 ```json
 {
@@ -328,6 +330,15 @@ UUID を指定してトラックを削除します。
   "title": "Jingle",
   "artist": "Radio"
 }
+```
+
+### リクエスト（複数トラック）
+
+```json
+[
+  { "type": "url", "url": "https://example.com/jingle.mp3", "title": "Jingle" },
+  { "type": "file", "path": "music/outro.mp3" }
+]
 ```
 
 トラック形式はプレイリストと同じ（`type: "file"` + `path`、または `type: "url"` + `url`）。
@@ -364,13 +375,16 @@ UUID を指定してトラックを削除します。
       "id": "550e8400-e29b-41d4-a716-446655440000",
       "name": "毎時ジングル",
       "cron": "0 * * * *",
-      "track": {
-        "type": "url",
-        "url": "https://example.com/jingle.mp3",
-        "title": "Jingle",
-        "artist": "Radio"
-      },
-      "enabled": true
+      "tracks": [
+        {
+          "type": "url",
+          "url": "https://example.com/jingle.mp3",
+          "title": "Jingle",
+          "artist": "Radio"
+        }
+      ],
+      "enabled": true,
+      "nextRun": "2026-02-15T10:00:00.000Z"
     }
   ]
 }
@@ -383,8 +397,9 @@ UUID を指定してトラックを削除します。
 | `id` | string | 番組 UUID |
 | `name` | string | 番組名 |
 | `cron` | string | cron 式（例: `"0 * * * *"` = 毎時0分） |
-| `track` | object | 再生するトラック（プレイリストと同じ形式） |
+| `tracks` | array | 再生するトラック配列（プレイリストと同じ形式） |
 | `enabled` | boolean | 有効/無効 |
+| `nextRun` | string \| null | 次回実行時刻（ISO 8601、無効時は `null`） |
 
 ---
 
@@ -392,18 +407,22 @@ UUID を指定してトラックを削除します。
 
 スケジュール番組を追加します。UUID は自動付与されます。
 
+**同じ cron 式の番組が既に存在する場合は上書き（upsert）されます。**
+
 ### リクエスト
 
 ```json
 {
   "name": "毎時ジングル",
   "cron": "0 * * * *",
-  "track": {
-    "type": "url",
-    "url": "https://example.com/jingle.mp3",
-    "title": "Jingle",
-    "artist": "Radio"
-  },
+  "tracks": [
+    {
+      "type": "url",
+      "url": "https://example.com/jingle.mp3",
+      "title": "Jingle",
+      "artist": "Radio"
+    }
+  ],
   "enabled": true
 }
 ```
@@ -411,8 +430,8 @@ UUID を指定してトラックを削除します。
 | フィールド | 必須 | 説明 |
 |---|---|---|
 | `name` | はい | 番組名 |
-| `cron` | はい | cron 式 |
-| `track` | はい | トラック（`type` + `path` or `url`） |
+| `cron` | はい | cron 式（同一 cron 式は上書き） |
+| `tracks` | はい | トラック配列（`type` + `path` or `url`） |
 | `enabled` | いいえ | デフォルト `true` |
 
 ### レスポンス
@@ -420,7 +439,7 @@ UUID を指定してトラックを削除します。
 ```json
 {
   "ok": true,
-  "program": { "id": "...", "name": "...", "cron": "...", "track": {...}, "enabled": true }
+  "program": { "id": "...", "name": "...", "cron": "...", "tracks": [...], "enabled": true }
 }
 ```
 
@@ -458,7 +477,7 @@ UUID を指定してトラックを削除します。
 ```json
 {
   "ok": true,
-  "program": { "id": "...", "name": "...", "cron": "*/30 * * * *", "track": {...}, "enabled": false }
+  "program": { "id": "...", "name": "...", "cron": "*/30 * * * *", "tracks": [...], "enabled": false }
 }
 ```
 
@@ -572,10 +591,10 @@ curl -X POST -H "Authorization: Bearer YOUR_API_KEY" \
 # スケジュール一覧
 curl http://localhost:3000/schedule
 
-# スケジュール番組追加
+# スケジュール番組追加（同じ cron 式が既存の場合は上書き）
 curl -X POST -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"name":"毎時ジングル","cron":"0 * * * *","track":{"type":"url","url":"https://example.com/jingle.mp3","title":"Jingle"}}' \
+  -d '{"name":"毎時ジングル","cron":"0 * * * *","tracks":[{"type":"url","url":"https://example.com/jingle.mp3","title":"Jingle"}]}' \
   http://localhost:3000/schedule/programs
 
 # スケジュール番組更新
