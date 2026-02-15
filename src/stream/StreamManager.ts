@@ -53,6 +53,15 @@ export class StreamManager {
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
+  /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
+  private static readonly SILENCE_FRAME = (() => {
+    const frame = Buffer.alloc(417, 0);
+    frame[0] = 0xFF; // Sync
+    frame[1] = 0xFB; // MPEG1, Layer3, no CRC
+    frame[2] = 0x90; // 128kbps, 44100Hz
+    frame[3] = 0x00; // Stereo
+    return frame;
+  })();
   /** 割り込み再生用 */
   private interruptTracks: TrackInfo[] = [];
   private isPlayingInterrupt = false;
@@ -350,8 +359,17 @@ export class StreamManager {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
+    // fetch 待ちの間、無音フレームを 26ms 間隔で送信してストリーム断を防ぐ
+    const silenceInterval = setInterval(() => {
+      if (!signal.aborted) {
+        this.broadcast(StreamManager.SILENCE_FRAME);
+      }
+    }, 26);
+
     try {
       const response = await fetch(track.url!, { signal });
+      clearInterval(silenceInterval);
+
       if (!response.ok) {
         console.error(`[StreamManager] HTTP ${response.status} fetching ${track.url}`);
         return;
@@ -373,6 +391,7 @@ export class StreamManager {
         this.streamWithRateControl(nodeStream, signal, resolve, track.url || 'unknown');
       });
     } catch (err: any) {
+      clearInterval(silenceInterval);
       if (err.name === 'AbortError') return;
       console.error(`[StreamManager] Error fetching ${track.url}:`, err.message);
     }
