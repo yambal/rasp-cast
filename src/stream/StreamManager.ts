@@ -339,6 +339,9 @@ export class StreamManager {
   }
 
   private async playLocalTrack(track: TrackInfo): Promise<void> {
+    // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
+    this.sendTransitionSilence();
+
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -445,6 +448,13 @@ export class StreamManager {
       console.error(`[StreamManager] Error streaming ${label}:`, err.message);
       resolve();
     });
+  }
+
+  /** トラック遷移時に無音フレームを送信し、FMOD のストリーム断検出を防ぐ */
+  private sendTransitionSilence(frameCount: number = 3): void {
+    for (let i = 0; i < frameCount; i++) {
+      this.broadcast(StreamManager.SILENCE_FRAME);
+    }
   }
 
   private broadcast(chunk: Buffer): void {

@@ -283,6 +283,8 @@ export class StreamManager {
         }
     }
     async playLocalTrack(track) {
+        // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
+        this.sendTransitionSilence();
         this.abortController = new AbortController();
         const { signal } = this.abortController;
         return new Promise((resolve) => {
@@ -370,6 +372,12 @@ export class StreamManager {
             console.error(`[StreamManager] Error streaming ${label}:`, err.message);
             resolve();
         });
+    }
+    /** トラック遷移時に無音フレームを送信し、FMOD のストリーム断検出を防ぐ */
+    sendTransitionSilence(frameCount = 3) {
+        for (let i = 0; i < frameCount; i++) {
+            this.broadcast(StreamManager.SILENCE_FRAME);
+        }
     }
     broadcast(chunk) {
         for (const client of this.clients) {
