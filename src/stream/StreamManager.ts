@@ -366,8 +366,11 @@ export class StreamManager {
       }
     }, 26);
 
+    // skip シグナルと 10 秒タイムアウトを結合
+    const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
+
     try {
-      const response = await fetch(track.url!, { signal });
+      const response = await fetch(track.url!, { signal: fetchSignal });
       clearInterval(silenceInterval);
 
       if (!response.ok) {
@@ -393,6 +396,10 @@ export class StreamManager {
     } catch (err: any) {
       clearInterval(silenceInterval);
       if (err.name === 'AbortError') return;
+      if (err.name === 'TimeoutError') {
+        console.error(`[StreamManager] Fetch timeout (10s) for ${track.url}`);
+        return;
+      }
       console.error(`[StreamManager] Error fetching ${track.url}:`, err.message);
     }
   }
