@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { Readable } from 'node:stream';
+import { Readable, PassThrough } from 'node:stream';
 import { createRequire } from 'node:module';
 import { parseFile } from 'music-metadata';
 import { IcyInterleaver } from './IcyMetadata.js';
@@ -283,12 +283,12 @@ export class StreamManager {
         }
     }
     async playLocalTrack(track) {
-        // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
-        this.sendTransitionSilence();
         this.abortController = new AbortController();
         const { signal } = this.abortController;
         return new Promise((resolve) => {
-            const stream = createReadStream(track.filePath, { highWaterMark: 16384 });
+            // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
+            // 無音フレームをレート制御されたストリームの一部として送信
+            const stream = this.createStreamWithSilencePrefix(track.filePath, 3);
             const onAbort = () => {
                 stream.destroy();
                 resolve();
@@ -300,17 +300,10 @@ export class StreamManager {
     async playUrlTrack(track) {
         this.abortController = new AbortController();
         const { signal } = this.abortController;
-        // fetch 待ちの間、無音フレームを 26ms 間隔で送信してストリーム断を防ぐ
-        const silenceInterval = setInterval(() => {
-            if (!signal.aborted) {
-                this.broadcast(StreamManager.SILENCE_FRAME);
-            }
-        }, 26);
         // skip シグナルと 10 秒タイムアウトを結合
         const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
         try {
             const response = await fetch(track.url, { signal: fetchSignal });
-            clearInterval(silenceInterval);
             if (!response.ok) {
                 console.error(`[StreamManager] HTTP ${response.status} fetching ${track.url}`);
                 return;
@@ -320,17 +313,18 @@ export class StreamManager {
                 return;
             }
             const nodeStream = Readable.fromWeb(response.body);
+            // 無音フレームを先頭に追加したストリームを作成
+            const streamWithSilence = this.createStreamWithSilencePrefixFromStream(nodeStream, 3);
             return new Promise((resolve) => {
                 const onAbort = () => {
-                    nodeStream.destroy();
+                    streamWithSilence.destroy();
                     resolve();
                 };
                 signal.addEventListener('abort', onAbort, { once: true });
-                this.streamWithRateControl(nodeStream, signal, resolve, track.url || 'unknown');
+                this.streamWithRateControl(streamWithSilence, signal, resolve, track.url || 'unknown');
             });
         }
         catch (err) {
-            clearInterval(silenceInterval);
             if (err.name === 'AbortError')
                 return;
             if (err.name === 'TimeoutError') {
@@ -373,11 +367,36 @@ export class StreamManager {
             resolve();
         });
     }
-    /** トラック遷移時に無音フレームを送信し、FMOD のストリーム断検出を防ぐ */
-    sendTransitionSilence(frameCount = 3) {
+    /** 無音フレームを先頭に持つストリームを作成（レート制御の一部として処理） */
+    createStreamWithSilencePrefix(filePath, frameCount) {
+        const passThrough = new PassThrough({ highWaterMark: 16384 });
+        // 無音フレームを先頭に書き込む
         for (let i = 0; i < frameCount; i++) {
-            this.broadcast(StreamManager.SILENCE_FRAME);
+            passThrough.write(StreamManager.SILENCE_FRAME);
         }
+        // ファイルストリームをパイプ
+        const fileStream = createReadStream(filePath, { highWaterMark: 16384 });
+        fileStream.pipe(passThrough);
+        // エラーハンドリング
+        fileStream.on('error', (err) => {
+            passThrough.destroy(err);
+        });
+        return passThrough;
+    }
+    /** 既存のストリームに無音フレームを先頭に追加（レート制御の一部として処理） */
+    createStreamWithSilencePrefixFromStream(sourceStream, frameCount) {
+        const passThrough = new PassThrough({ highWaterMark: 16384 });
+        // 無音フレームを先頭に書き込む
+        for (let i = 0; i < frameCount; i++) {
+            passThrough.write(StreamManager.SILENCE_FRAME);
+        }
+        // ソースストリームをパイプ
+        sourceStream.pipe(passThrough);
+        // エラーハンドリング
+        sourceStream.on('error', (err) => {
+            passThrough.destroy(err);
+        });
+        return passThrough;
     }
     broadcast(chunk) {
         for (const client of this.clients) {

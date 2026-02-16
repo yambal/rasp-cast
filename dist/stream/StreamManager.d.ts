@@ -62,7 +62,9 @@ export declare class StreamManager {
     private playLocalTrack;
     private playUrlTrack;
     private streamWithRateControl;
-    /** トラック遷移時に無音フレームを送信し、FMOD のストリーム断検出を防ぐ */
-    private sendTransitionSilence;
+    /** 無音フレームを先頭に持つストリームを作成（レート制御の一部として処理） */
+    private createStreamWithSilencePrefix;
+    /** 既存のストリームに無音フレームを先頭に追加（レート制御の一部として処理） */
+    private createStreamWithSilencePrefixFromStream;
     private broadcast;
 }

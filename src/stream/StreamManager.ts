@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { Readable } from 'node:stream';
+import { Readable, PassThrough } from 'node:stream';
 import { createRequire } from 'node:module';
 import type { Response } from 'express';
 import { parseFile } from 'music-metadata';
@@ -339,14 +339,13 @@ export class StreamManager {
   }
 
   private async playLocalTrack(track: TrackInfo): Promise<void> {
-    // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
-    this.sendTransitionSilence();
-
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
     return new Promise<void>((resolve) => {
-      const stream = createReadStream(track.filePath!, { highWaterMark: 16384 });
+      // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
+      // 無音フレームをレート制御されたストリームの一部として送信
+      const stream = this.createStreamWithSilencePrefix(track.filePath!, 3);
 
       const onAbort = () => {
         stream.destroy();
@@ -362,19 +361,11 @@ export class StreamManager {
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
-    // fetch 待ちの間、無音フレームを 26ms 間隔で送信してストリーム断を防ぐ
-    const silenceInterval = setInterval(() => {
-      if (!signal.aborted) {
-        this.broadcast(StreamManager.SILENCE_FRAME);
-      }
-    }, 26);
-
     // skip シグナルと 10 秒タイムアウトを結合
     const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
 
     try {
       const response = await fetch(track.url!, { signal: fetchSignal });
-      clearInterval(silenceInterval);
 
       if (!response.ok) {
         console.error(`[StreamManager] HTTP ${response.status} fetching ${track.url}`);
@@ -386,18 +377,19 @@ export class StreamManager {
       }
 
       const nodeStream = Readable.fromWeb(response.body as any);
+      // 無音フレームを先頭に追加したストリームを作成
+      const streamWithSilence = this.createStreamWithSilencePrefixFromStream(nodeStream, 3);
 
       return new Promise<void>((resolve) => {
         const onAbort = () => {
-          nodeStream.destroy();
+          streamWithSilence.destroy();
           resolve();
         };
         signal.addEventListener('abort', onAbort, { once: true });
 
-        this.streamWithRateControl(nodeStream, signal, resolve, track.url || 'unknown');
+        this.streamWithRateControl(streamWithSilence, signal, resolve, track.url || 'unknown');
       });
     } catch (err: any) {
-      clearInterval(silenceInterval);
       if (err.name === 'AbortError') return;
       if (err.name === 'TimeoutError') {
         console.error(`[StreamManager] Fetch timeout (10s) for ${track.url}`);
@@ -450,11 +442,45 @@ export class StreamManager {
     });
   }
 
-  /** トラック遷移時に無音フレームを送信し、FMOD のストリーム断検出を防ぐ */
-  private sendTransitionSilence(frameCount: number = 3): void {
+  /** 無音フレームを先頭に持つストリームを作成（レート制御の一部として処理） */
+  private createStreamWithSilencePrefix(filePath: string, frameCount: number): Readable {
+    const passThrough = new PassThrough({ highWaterMark: 16384 });
+
+    // 無音フレームを先頭に書き込む
     for (let i = 0; i < frameCount; i++) {
-      this.broadcast(StreamManager.SILENCE_FRAME);
+      passThrough.write(StreamManager.SILENCE_FRAME);
     }
+
+    // ファイルストリームをパイプ
+    const fileStream = createReadStream(filePath, { highWaterMark: 16384 });
+    fileStream.pipe(passThrough);
+
+    // エラーハンドリング
+    fileStream.on('error', (err) => {
+      passThrough.destroy(err);
+    });
+
+    return passThrough;
+  }
+
+  /** 既存のストリームに無音フレームを先頭に追加（レート制御の一部として処理） */
+  private createStreamWithSilencePrefixFromStream(sourceStream: Readable, frameCount: number): Readable {
+    const passThrough = new PassThrough({ highWaterMark: 16384 });
+
+    // 無音フレームを先頭に書き込む
+    for (let i = 0; i < frameCount; i++) {
+      passThrough.write(StreamManager.SILENCE_FRAME);
+    }
+
+    // ソースストリームをパイプ
+    sourceStream.pipe(passThrough);
+
+    // エラーハンドリング
+    sourceStream.on('error', (err) => {
+      passThrough.destroy(err);
+    });
+
+    return passThrough;
   }
 
   private broadcast(chunk: Buffer): void {
