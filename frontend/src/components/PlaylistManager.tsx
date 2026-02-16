@@ -29,7 +29,11 @@ export function PlaylistManager() {
 
   const fetchPlaylist = async () => {
     try {
-      const response = await fetch('/api/playlist');
+      const response = await fetch('/playlist', {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+        },
+      });
       if (!response.ok) throw new Error('Failed to fetch playlist');
       const data = await response.json();
       setTracks(data.tracks || []);
@@ -67,7 +71,7 @@ export function PlaylistManager() {
         ...(trackType === 'file' ? { path } : { url }),
       };
 
-      const response = await fetch('/api/playlist/tracks', {
+      const response = await fetch('/playlist/tracks', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +99,7 @@ export function PlaylistManager() {
     if (!confirm('このトラックを削除しますか？')) return;
 
     try {
-      const response = await fetch(`/api/playlist/tracks/${id}`, {
+      const response = await fetch(`/playlist/tracks/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${apiKey}`,

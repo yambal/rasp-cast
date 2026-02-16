@@ -19,9 +19,9 @@ export function useAuth() {
   const verifyApiKey = async (key: string): Promise<boolean> => {
     setIsVerifying(true);
     try {
-      // /status エンドポイントで認証をテスト
-      // 管理系エンドポイントでAPI_KEYが必要なので、/skipで試す
-      const response = await fetch('/api/playlist', {
+      // /playlist エンドポイントで認証をテスト
+      // 管理系エンドポイントでAPI_KEYが必要
+      const response = await fetch('/playlist', {
         headers: {
           'Authorization': `Bearer ${key}`,
         },

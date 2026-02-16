@@ -8,7 +8,7 @@ export function createPlaylistRoutes(streamManager: StreamManager): Router {
   /**
    * GET /playlist — 現在のプレイリスト取得
    */
-  router.get('/playlist', (_req, res) => {
+  router.get('/playlist', requireApiKey, (_req, res) => {
     res.json({ tracks: streamManager.getPlaylist() });
   });
 
