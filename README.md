@@ -42,7 +42,10 @@ npm run dev
 
 ダッシュボードは `http://localhost:3000/` でアクセスできます。
 
-Raspberry Pi デプロイ、API リファレンス、外部公開の手順は **[INSTALL.md](INSTALL.md)** を参照してください。
+**ドキュメント:**
+- **[INSTALL.md](INSTALL.md)** - Raspberry Pi デプロイ、外部公開の手順
+- **[SERVICE.md](SERVICE.md)** - サービス管理・ログ確認・トラブルシューティング
+- **[API.md](API.md)** - REST API リファレンス
 
 ## Web ダッシュボード
 
