@@ -152,9 +152,8 @@ export class StreamManager {
                 continue;
             }
             await this.playTrack(this.tracks[this.currentIndex]);
-            // 割り込みで中断された場合は次の曲へ進める
+            // 割り込みで中断された場合は同じ曲を維持（次回再生時に再度再生）
             if (this.interruptTracks.length > 0) {
-                this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
                 continue;
             }
             this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
@@ -172,13 +171,21 @@ export class StreamManager {
     }
     async playInterrupt() {
         this.isPlayingInterrupt = true;
+        const totalTracks = this.interruptTracks.length;
+        console.log(`[StreamManager] Starting interrupt playback: ${totalTracks} tracks queued`);
+        let trackNumber = 1;
         while (this.interruptTracks.length > 0) {
             const track = this.interruptTracks.shift();
-            console.log(`[StreamManager] Playing interrupt: ${track.title}`);
+            const remaining = this.interruptTracks.length;
+            console.log(`[StreamManager] Playing interrupt [${trackNumber}/${totalTracks}]: "${track.title}" (${remaining} remaining)`);
+            const startTime = Date.now();
             await this.playTrack(track);
+            const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+            console.log(`[StreamManager] Finished interrupt [${trackNumber}/${totalTracks}]: "${track.title}" (${duration}s)`);
+            trackNumber++;
         }
         this.isPlayingInterrupt = false;
-        console.log('[StreamManager] Interrupt finished, resuming playlist');
+        console.log(`[StreamManager] Interrupt finished, played ${trackNumber - 1}/${totalTracks} tracks, resuming playlist`);
     }
     skip() {
         if (this.abortController) {
@@ -300,23 +307,28 @@ export class StreamManager {
     async playUrlTrack(track) {
         this.abortController = new AbortController();
         const { signal } = this.abortController;
+        console.log(`[StreamManager] Fetching URL track: "${track.title}" from ${track.url}`);
+        const fetchStart = Date.now();
         // skip シグナルと 10 秒タイムアウトを結合
         const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
         try {
             const response = await fetch(track.url, { signal: fetchSignal });
+            const fetchTime = ((Date.now() - fetchStart) / 1000).toFixed(2);
             if (!response.ok) {
-                console.error(`[StreamManager] HTTP ${response.status} fetching ${track.url}`);
+                console.error(`[StreamManager] ⚠️  Failed to fetch "${track.title}": HTTP ${response.status} (${fetchTime}s) - ${track.url}`);
                 return;
             }
             if (!response.body) {
-                console.error(`[StreamManager] No response body for ${track.url}`);
+                console.error(`[StreamManager] ⚠️  Failed to fetch "${track.title}": No response body (${fetchTime}s) - ${track.url}`);
                 return;
             }
+            console.log(`[StreamManager] ✓ Fetched "${track.title}" in ${fetchTime}s, starting playback`);
             const nodeStream = Readable.fromWeb(response.body);
             // 無音フレームを先頭に追加したストリームを作成
             const streamWithSilence = this.createStreamWithSilencePrefixFromStream(nodeStream, 3);
             return new Promise((resolve) => {
                 const onAbort = () => {
+                    console.log(`[StreamManager] ⊗ Aborted playback of "${track.title}"`);
                     streamWithSilence.destroy();
                     resolve();
                 };
@@ -325,13 +337,16 @@ export class StreamManager {
             });
         }
         catch (err) {
-            if (err.name === 'AbortError')
-                return;
-            if (err.name === 'TimeoutError') {
-                console.error(`[StreamManager] Fetch timeout (10s) for ${track.url}`);
+            const fetchTime = ((Date.now() - fetchStart) / 1000).toFixed(2);
+            if (err.name === 'AbortError') {
+                console.log(`[StreamManager] ⊗ Fetch aborted for "${track.title}" (${fetchTime}s)`);
                 return;
             }
-            console.error(`[StreamManager] Error fetching ${track.url}:`, err.message);
+            if (err.name === 'TimeoutError') {
+                console.error(`[StreamManager] ⚠️  Fetch timeout (10s) for "${track.title}" - ${track.url}`);
+                return;
+            }
+            console.error(`[StreamManager] ⚠️  Error fetching "${track.title}" (${fetchTime}s):`, err.message, `-`, track.url);
         }
     }
     streamWithRateControl(stream, signal, resolve, label) {
