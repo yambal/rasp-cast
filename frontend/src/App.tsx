@@ -5,8 +5,18 @@ import { StatusBar } from './components/StatusBar';
 import { NowPlaying } from './components/NowPlaying';
 import { ScheduleView } from './components/ScheduleView';
 import { HowToListen } from './components/HowToListen';
+import { AdminPanel } from './components/AdminPanel';
 
 export function App() {
+  // URLパラメータで管理画面を判定
+  const isAdmin = new URLSearchParams(window.location.search).has('admin');
+
+  // 管理画面の場合
+  if (isAdmin) {
+    return <AdminPanel />;
+  }
+
+  // 公開ダッシュボード
   const status = useStatus();
   const programs = useSchedule();
   const streamUrl = status?.streamUrl;
