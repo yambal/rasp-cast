@@ -336,34 +336,53 @@ export class StreamManager {
     }
     streamWithRateControl(stream, signal, resolve, label) {
         // ビットレートに合わせた送信レート制御
-        // 128kbps = 16000 bytes/sec → 16384 bytes chunk ≈ 1.024 sec
+        // 128kbps = 16000 bytes/sec
         const bytesPerSecond = (this.targetBitrate * 1000) / 8;
         let totalBytesSent = 0;
         const startTime = Date.now();
-        stream.on('data', (chunk) => {
-            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-            if (signal.aborted)
+        let chunkQueue = [];
+        let isSending = false;
+        const sendNextChunk = async () => {
+            if (isSending || chunkQueue.length === 0 || signal.aborted)
                 return;
-            // レート制御: 送信が速すぎる場合は pause して待つ
+            isSending = true;
+            const buf = chunkQueue.shift();
             totalBytesSent += buf.length;
+            // 期待される送信タイミングを計算
             const expectedTime = (totalBytesSent / bytesPerSecond) * 1000;
             const actualTime = Date.now() - startTime;
             const delay = expectedTime - actualTime;
-            if (delay > 200) {
-                stream.pause();
-                setTimeout(() => {
-                    if (!signal.aborted)
-                        stream.resume();
-                }, delay);
+            // 送信が速すぎる場合は待機（最大1秒まで）
+            if (delay > 0) {
+                await new Promise(r => setTimeout(r, Math.min(delay, 1000)));
             }
-            this.broadcast(buf);
+            if (!signal.aborted) {
+                this.broadcast(buf);
+            }
+            isSending = false;
+            // 次のチャンクを送信
+            setImmediate(() => sendNextChunk());
+        };
+        stream.on('data', (chunk) => {
+            if (signal.aborted)
+                return;
+            const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            chunkQueue.push(buf);
+            sendNextChunk();
         });
         stream.on('end', () => {
-            signal.removeEventListener('abort', () => { });
-            resolve();
+            // 残りのチャンクを送信してから終了
+            const waitForQueue = setInterval(() => {
+                if (chunkQueue.length === 0 && !isSending) {
+                    clearInterval(waitForQueue);
+                    signal.removeEventListener('abort', () => { });
+                    resolve();
+                }
+            }, 50);
         });
         stream.on('error', (err) => {
             console.error(`[StreamManager] Error streaming ${label}:`, err.message);
+            chunkQueue = [];
             resolve();
         });
     }
