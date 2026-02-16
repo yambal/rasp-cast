@@ -394,8 +394,8 @@ export class StreamManager {
       console.log(`[StreamManager] ✓ Fetched "${track.title}" in ${fetchTime}s, starting playback`);
 
       const nodeStream = Readable.fromWeb(response.body as any);
-      // 無音フレームを先頭に追加したストリームを作成
-      const streamWithSilence = this.createStreamWithSilencePrefixFromStream(nodeStream, 3);
+      // 無音フレームを先頭に追加したストリームを作成（1秒に短縮）
+      const streamWithSilence = this.createStreamWithSilencePrefixFromStream(nodeStream, 1);
 
       return new Promise<void>((resolve) => {
         const onAbort = () => {
