@@ -28,6 +28,8 @@ export function PlaylistManager() {
   const [url, setUrl] = useState('');
 
   const fetchPlaylist = async () => {
+    if (!apiKey) return;
+
     try {
       const response = await fetch('/playlist', {
         headers: {
@@ -46,7 +48,7 @@ export function PlaylistManager() {
 
   useEffect(() => {
     fetchPlaylist();
-  }, []);
+  }, [apiKey]);
 
   const handleAddTrack = async () => {
     if (!title || !artist) {
