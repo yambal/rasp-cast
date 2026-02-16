@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
-import { Readable, PassThrough } from 'node:stream';
+import { Readable } from 'node:stream';
 import { createRequire } from 'node:module';
 import { parseFile } from 'music-metadata';
 import { IcyInterleaver } from './IcyMetadata.js';
@@ -19,15 +19,6 @@ export class StreamManager {
     abortController = null;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     targetBitrate = 128; // kbps
-    /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
-    static SILENCE_FRAME = (() => {
-        const frame = Buffer.alloc(417, 0);
-        frame[0] = 0xFF; // Sync
-        frame[1] = 0xFB; // MPEG1, Layer3, no CRC
-        frame[2] = 0x90; // 128kbps, 44100Hz
-        frame[3] = 0x00; // Stereo
-        return frame;
-    })();
     /** 割り込み再生用 */
     interruptTracks = [];
     isPlayingInterrupt = false;
@@ -293,9 +284,7 @@ export class StreamManager {
         this.abortController = new AbortController();
         const { signal } = this.abortController;
         return new Promise((resolve) => {
-            // トラック遷移ギャップを無音フレームで埋め、FMOD のストリーム断を防止
-            // 無音フレームをレート制御されたストリームの一部として送信
-            const stream = this.createStreamWithSilencePrefix(track.filePath, 3);
+            const stream = createReadStream(track.filePath, { highWaterMark: 16384 });
             const onAbort = () => {
                 stream.destroy();
                 resolve();
@@ -324,16 +313,14 @@ export class StreamManager {
             }
             console.log(`[StreamManager] ✓ Fetched "${track.title}" in ${fetchTime}s, starting playback`);
             const nodeStream = Readable.fromWeb(response.body);
-            // 無音フレームを先頭に追加したストリームを作成（1秒に短縮）
-            const streamWithSilence = this.createStreamWithSilencePrefixFromStream(nodeStream, 1);
             return new Promise((resolve) => {
                 const onAbort = () => {
                     console.log(`[StreamManager] ⊗ Aborted playback of "${track.title}"`);
-                    streamWithSilence.destroy();
+                    nodeStream.destroy();
                     resolve();
                 };
                 signal.addEventListener('abort', onAbort, { once: true });
-                this.streamWithRateControl(streamWithSilence, signal, resolve, track.url || 'unknown');
+                this.streamWithRateControl(nodeStream, signal, resolve, track.url || 'unknown');
             });
         }
         catch (err) {
@@ -400,37 +387,6 @@ export class StreamManager {
             chunkQueue = [];
             resolve();
         });
-    }
-    /** 無音フレームを先頭に持つストリームを作成（レート制御の一部として処理） */
-    createStreamWithSilencePrefix(filePath, frameCount) {
-        const passThrough = new PassThrough({ highWaterMark: 16384 });
-        // 無音フレームを先頭に書き込む
-        for (let i = 0; i < frameCount; i++) {
-            passThrough.write(StreamManager.SILENCE_FRAME);
-        }
-        // ファイルストリームをパイプ
-        const fileStream = createReadStream(filePath, { highWaterMark: 16384 });
-        fileStream.pipe(passThrough);
-        // エラーハンドリング
-        fileStream.on('error', (err) => {
-            passThrough.destroy(err);
-        });
-        return passThrough;
-    }
-    /** 既存のストリームに無音フレームを先頭に追加（レート制御の一部として処理） */
-    createStreamWithSilencePrefixFromStream(sourceStream, frameCount) {
-        const passThrough = new PassThrough({ highWaterMark: 16384 });
-        // 無音フレームを先頭に書き込む
-        for (let i = 0; i < frameCount; i++) {
-            passThrough.write(StreamManager.SILENCE_FRAME);
-        }
-        // ソースストリームをパイプ
-        sourceStream.pipe(passThrough);
-        // エラーハンドリング
-        sourceStream.on('error', (err) => {
-            passThrough.destroy(err);
-        });
-        return passThrough;
     }
     broadcast(chunk) {
         for (const client of this.clients) {
