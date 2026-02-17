@@ -19,6 +19,15 @@ export class StreamManager {
     abortController = null;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     targetBitrate = 128; // kbps
+    /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
+    static SILENCE_FRAME = (() => {
+        const frame = Buffer.alloc(417, 0);
+        frame[0] = 0xFF; // Sync
+        frame[1] = 0xFB; // MPEG1, Layer3, no CRC
+        frame[2] = 0x90; // 128kbps, 44100Hz
+        frame[3] = 0x00; // Stereo
+        return frame;
+    })();
     /** 割り込み再生用 */
     interruptTracks = [];
     isPlayingInterrupt = false;
@@ -298,10 +307,16 @@ export class StreamManager {
         const { signal } = this.abortController;
         console.log(`[StreamManager] Fetching URL track: "${track.title}" from ${track.url}`);
         const fetchStart = Date.now();
+        // フェッチ中にストリームを維持するため、128kbps相当で無音フレームを送信
+        // 417 bytes/frame ≈ 26ms → 約38フレーム/秒 ≈ 128kbps
+        const silenceInterval = setInterval(() => {
+            this.broadcast(StreamManager.SILENCE_FRAME);
+        }, 26);
         // skip シグナルと 10 秒タイムアウトを結合
         const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
         try {
             const response = await fetch(track.url, { signal: fetchSignal });
+            clearInterval(silenceInterval);
             const fetchTime = ((Date.now() - fetchStart) / 1000).toFixed(2);
             if (!response.ok) {
                 console.error(`[StreamManager] ⚠️  Failed to fetch "${track.title}": HTTP ${response.status} (${fetchTime}s) - ${track.url}`);
@@ -311,7 +326,7 @@ export class StreamManager {
                 console.error(`[StreamManager] ⚠️  Failed to fetch "${track.title}": No response body (${fetchTime}s) - ${track.url}`);
                 return;
             }
-            console.log(`[StreamManager] ✓ Fetched "${track.title}" in ${fetchTime}s, starting playback`);
+            console.log(`[StreamManager] ✓ Fetched "${track.title}" in ${fetchTime}s, starting playback (silence sent during fetch)`);
             const nodeStream = Readable.fromWeb(response.body);
             return new Promise((resolve) => {
                 const onAbort = () => {
@@ -324,6 +339,7 @@ export class StreamManager {
             });
         }
         catch (err) {
+            clearInterval(silenceInterval);
             const fetchTime = ((Date.now() - fetchStart) / 1000).toFixed(2);
             if (err.name === 'AbortError') {
                 console.log(`[StreamManager] ⊗ Fetch aborted for "${track.title}" (${fetchTime}s)`);
