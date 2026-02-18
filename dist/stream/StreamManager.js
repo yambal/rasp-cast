@@ -182,6 +182,11 @@ export class StreamManager {
                     entry.cached = fs.existsSync(cachePath);
                     if (wasCached !== entry.cached)
                         needsSave = true;
+                    // キャッシュが無いURLトラックはプレイリストに追加しない
+                    if (!entry.cached) {
+                        console.warn(`[StreamManager] Excluding uncached track "${entry.title || entry.url}" from playlist`);
+                        continue;
+                    }
                 }
                 this.tracks.push(await this.buildTrackInfo(entry));
             }
@@ -193,6 +198,10 @@ export class StreamManager {
         if (needsSave && this.playlistPath) {
             fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
             console.log('[StreamManager] Updated playlist.json (IDs/cached flags)');
+        }
+        // shuffle有効時は読み込み直後もシャッフル
+        if (this.shuffle && this.tracks.length > 1) {
+            this.shuffleTracks();
         }
     }
     async buildTrackInfo(entry) {
