@@ -27,12 +27,14 @@ API キーは環境変数 `API_KEY` または `.env` ファイルで設定しま
 | GET | `/stream` | 不要 | MP3 ストリーム |
 | GET | `/status` | 不要 | 配信状態 |
 | GET | `/playlist` | 不要 | プレイリスト取得 |
+| GET | `/cache` | 不要 | キャッシュ状態 |
 | GET | `/schedule` | 不要 | スケジュール番組一覧 |
 | POST | `/skip` | 必要 | 次の曲へスキップ |
 | POST | `/skip/:id` | 必要 | 指定トラックへジャンプ |
 | PUT | `/playlist` | 必要 | プレイリスト全置換 |
 | POST | `/playlist/tracks` | 必要 | トラック追加 |
 | DELETE | `/playlist/tracks/:id` | 必要 | トラック削除 |
+| POST | `/cache/cleanup` | 必要 | キャッシュ整合性チェック＆クリーンアップ |
 | POST | `/interrupt` | 必要 | 割り込み再生 |
 | POST | `/schedule/programs` | 必要 | スケジュール番組追加 |
 | PUT | `/schedule/programs/:id` | 必要 | スケジュール番組更新 |
@@ -135,7 +137,8 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
       "type": "url",
       "url": "https://example.com/track.mp3",
       "title": "Remote Track",
-      "artist": "Remote Artist"
+      "artist": "Remote Artist",
+      "cached": true
     }
   ]
 }
@@ -151,6 +154,88 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 | `url` | string | リモート URL（`type: "url"` のみ） |
 | `title` | string | 曲名 |
 | `artist` | string | アーティスト名 |
+| `cached` | boolean | キャッシュ済みかどうか（`type: "url"` のみ） |
+
+---
+
+## GET /cache
+
+キャッシュディレクトリ内のファイル一覧と合計サイズを返します。
+
+### レスポンス
+
+```json
+{
+  "files": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "size": 5242880,
+      "title": "Track Title",
+      "artist": "Artist Name"
+    }
+  ],
+  "totalSize": 52428800,
+  "totalFiles": 10
+}
+```
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `files` | array | キャッシュファイル一覧 |
+| `files[].id` | string | トラック UUID |
+| `files[].size` | number | ファイルサイズ（バイト） |
+| `files[].title` | string | 曲名（プレイリストに存在する場合） |
+| `files[].artist` | string | アーティスト名（プレイリストに存在する場合） |
+| `totalSize` | number | 合計サイズ（バイト） |
+| `totalFiles` | number | ファイル数 |
+
+---
+
+## POST /cache/cleanup
+
+キャッシュの整合性をチェックし、プレイリスト・スケジュールのどちらにも属さない孤立キャッシュファイルを削除します。
+
+### リクエスト
+
+ボディ不要。
+
+### レスポンス
+
+```json
+{
+  "ok": true,
+  "tracks": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "title": "Track Title",
+      "url": "https://example.com/track.mp3",
+      "cached": true,
+      "size": 5242880
+    },
+    {
+      "id": "6ba7b810-9dad-11d1-80b4-00c04fd430c8",
+      "title": "Missing Track",
+      "url": "https://example.com/missing.mp3",
+      "cached": false,
+      "size": null
+    }
+  ],
+  "orphaned": [
+    { "id": "old-orphan-id", "size": 1048576 }
+  ],
+  "deletedCount": 1,
+  "freedBytes": 1048576
+}
+```
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `tracks` | array | 全 URL トラックのキャッシュ状態 |
+| `tracks[].cached` | boolean | キャッシュファイルが存在するか |
+| `tracks[].size` | number \| null | ファイルサイズ（未キャッシュ時は `null`） |
+| `orphaned` | array | 削除された孤立キャッシュファイル |
+| `deletedCount` | number | 削除されたファイル数 |
+| `freedBytes` | number | 解放されたバイト数 |
 
 ---
 
@@ -587,6 +672,13 @@ curl -X POST -H "Authorization: Bearer YOUR_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"type":"url","url":"https://example.com/jingle.mp3","title":"Jingle","artist":"Radio"}' \
   http://localhost:3000/interrupt
+
+# キャッシュ状態
+curl http://localhost:3000/cache
+
+# キャッシュ整合性チェック＆クリーンアップ
+curl -X POST -H "Authorization: Bearer YOUR_API_KEY" \
+  http://localhost:3000/cache/cleanup
 
 # スケジュール一覧
 curl http://localhost:3000/schedule
