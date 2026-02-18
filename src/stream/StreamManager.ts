@@ -3,10 +3,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 import { createRequire } from 'node:module';
 import type { Response } from 'express';
 import { parseFile } from 'music-metadata';
-import { ICY_METAINT, IcyInterleaver } from './IcyMetadata.js';
+import { IcyInterleaver } from './IcyMetadata.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
@@ -22,11 +23,10 @@ interface TrackInfo {
   type: 'file' | 'url';
   title: string;
   artist: string;
-  // file 用
   filePath?: string;
   filename?: string;
-  // url 用
   url?: string;
+  cached?: boolean;
 }
 
 export interface PlaylistFileTrack {
@@ -53,21 +53,57 @@ export class StreamManager {
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
-  /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
-  private static readonly SILENCE_FRAME = (() => {
-    const frame = Buffer.alloc(417, 0);
-    frame[0] = 0xFF; // Sync
-    frame[1] = 0xFB; // MPEG1, Layer3, no CRC
-    frame[2] = 0x90; // 128kbps, 44100Hz
-    frame[3] = 0x00; // Stereo
-    return frame;
-  })();
   /** 割り込み再生用 */
   private interruptTracks: TrackInfo[] = [];
   private isPlayingInterrupt = false;
+  /** キャッシュディレクトリ */
+  private cacheDir: string;
 
-  constructor(musicDir: string) {
+  constructor(musicDir: string, cacheDir: string) {
     this.musicDir = musicDir;
+    this.cacheDir = cacheDir;
+    if (!fs.existsSync(this.cacheDir)) {
+      fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
+  }
+
+  /** URLトラックをキャッシュディレクトリにダウンロード */
+  async downloadToCache(url: string, id: string): Promise<string> {
+    const cachePath = path.join(this.cacheDir, `${id}.mp3`);
+
+    if (fs.existsSync(cachePath)) {
+      console.log(`[StreamManager] Cache hit: ${id} (${url})`);
+      return cachePath;
+    }
+
+    console.log(`[StreamManager] Downloading: "${id}" from ${url}`);
+    const tempPath = cachePath + '.tmp';
+
+    const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} for ${url}`);
+    }
+    if (!response.body) {
+      throw new Error(`No response body for ${url}`);
+    }
+
+    const nodeStream = Readable.fromWeb(response.body as any);
+    const writeStream = fs.createWriteStream(tempPath);
+    await pipeline(nodeStream, writeStream);
+
+    fs.renameSync(tempPath, cachePath);
+    const size = fs.statSync(cachePath).size;
+    console.log(`[StreamManager] Downloaded: ${id} (${(size / 1024).toFixed(0)} KB)`);
+    return cachePath;
+  }
+
+  /** キャッシュファイルを削除 */
+  deleteCacheFile(id: string): void {
+    const cachePath = path.join(this.cacheDir, `${id}.mp3`);
+    if (fs.existsSync(cachePath)) {
+      fs.unlinkSync(cachePath);
+      console.log(`[StreamManager] Cache deleted: ${id}`);
+    }
   }
 
   async loadPlaylist(playlistPath: string): Promise<number> {
@@ -93,13 +129,32 @@ export class StreamManager {
   }
 
   private async loadFromPlaylistFile(playlist: PlaylistFile): Promise<void> {
+    let needsSave = false;
     this.tracks = [];
     for (const entry of playlist.tracks) {
       try {
+        // IDが無いトラックにはIDを自動付与
+        if (!entry.id) {
+          entry.id = crypto.randomUUID();
+          needsSave = true;
+        }
+        // URLトラックはキャッシュが無ければ自動ダウンロード
+        if (entry.type === 'url' && entry.url) {
+          try {
+            await this.downloadToCache(entry.url, entry.id);
+          } catch (err: any) {
+            console.error(`[StreamManager] ⚠️  Failed to cache "${entry.title}": ${err.message}`);
+          }
+        }
         this.tracks.push(await this.buildTrackInfo(entry));
       } catch {
         // 無効なエントリはスキップ
       }
+    }
+    // IDを付与した場合、playlist.jsonに永続化
+    if (needsSave && this.playlistPath) {
+      fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
+      console.log('[StreamManager] Assigned IDs to tracks and saved playlist.json');
     }
   }
 
@@ -125,10 +180,15 @@ export class StreamManager {
       return { id: entry.id || crypto.randomUUID(), type: 'file', filePath, filename, title, artist };
     }
     if (entry.type === 'url' && entry.url) {
+      const id = entry.id || crypto.randomUUID();
+      const cachePath = path.join(this.cacheDir, `${id}.mp3`);
+      const cached = fs.existsSync(cachePath);
       return {
-        id: entry.id || crypto.randomUUID(),
+        id,
         type: 'url',
         url: entry.url,
+        filePath: cached ? cachePath : undefined,
+        cached,
         title: entry.title || 'Unknown',
         artist: entry.artist || 'Unknown',
       };
@@ -282,8 +342,16 @@ export class StreamManager {
   }
 
   async setPlaylist(tracks: PlaylistFileTrack[]): Promise<number> {
+    // IDが無いトラックにはIDを付与
+    for (const track of tracks) {
+      if (!track.id) {
+        track.id = crypto.randomUUID();
+      }
+    }
+
     const playlist: PlaylistFile = { tracks };
     fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
+    // loadFromPlaylistFile 内でURLキャッシュ・TrackInfo構築を一括実行
     await this.loadFromPlaylistFile(playlist);
     this.adjustCurrentIndex();
     console.log(`[StreamManager] Playlist updated: ${this.tracks.length} tracks`);
@@ -294,6 +362,7 @@ export class StreamManager {
     const current = this.getPlaylist();
     const id = track.id || crypto.randomUUID();
     current.push({ ...track, id });
+    // setPlaylist → loadFromPlaylistFile でURLキャッシュ実行
     const trackCount = await this.setPlaylist(current);
     return { id, trackCount };
   }
@@ -304,6 +373,13 @@ export class StreamManager {
     if (index === -1) {
       throw new Error(`Track not found: ${id}`);
     }
+
+    // URLトラックのキャッシュを即時削除
+    const removed = current[index];
+    if (removed.type === 'url') {
+      this.deleteCacheFile(id);
+    }
+
     current.splice(index, 1);
     // 削除位置に応じて currentIndex を調整
     if (index < this.currentIndex) {
@@ -342,10 +418,10 @@ export class StreamManager {
       }
     }
 
-    if (track.type === 'file') {
+    if (track.filePath) {
       await this.playLocalTrack(track);
     } else {
-      await this.playUrlTrack(track);
+      console.warn(`[StreamManager] ⚠️  No playable file for "${track.title}" (type=${track.type}, cached=${track.cached}) - skipping`);
     }
   }
 
@@ -364,65 +440,6 @@ export class StreamManager {
 
       this.streamWithRateControl(stream, signal, resolve, track.filename || 'unknown');
     });
-  }
-
-  private async playUrlTrack(track: TrackInfo): Promise<void> {
-    this.abortController = new AbortController();
-    const { signal } = this.abortController;
-
-    console.log(`[StreamManager] Fetching URL track: "${track.title}" from ${track.url}`);
-    const fetchStart = Date.now();
-
-    // フェッチ中にストリームを維持するため、128kbps相当で無音フレームを送信
-    // 417 bytes/frame ≈ 26ms → 約38フレーム/秒 ≈ 128kbps
-    const silenceInterval = setInterval(() => {
-      this.broadcast(StreamManager.SILENCE_FRAME);
-    }, 26);
-
-    // skip シグナルと 10 秒タイムアウトを結合
-    const fetchSignal = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
-
-    try {
-      const response = await fetch(track.url!, { signal: fetchSignal });
-      clearInterval(silenceInterval);
-      const fetchTime = ((Date.now() - fetchStart) / 1000).toFixed(2);
-
-      if (!response.ok) {
-        console.error(`[StreamManager] ⚠️  Failed to fetch "${track.title}": HTTP ${response.status} (${fetchTime}s) - ${track.url}`);
-        return;
-      }
-      if (!response.body) {
-        console.error(`[StreamManager] ⚠️  Failed to fetch "${track.title}": No response body (${fetchTime}s) - ${track.url}`);
-        return;
-      }
-
-      console.log(`[StreamManager] ✓ Fetched "${track.title}" in ${fetchTime}s, starting playback (silence sent during fetch)`);
-
-      const nodeStream = Readable.fromWeb(response.body as any);
-
-      return new Promise<void>((resolve) => {
-        const onAbort = () => {
-          console.log(`[StreamManager] ⊗ Aborted playback of "${track.title}"`);
-          nodeStream.destroy();
-          resolve();
-        };
-        signal.addEventListener('abort', onAbort, { once: true });
-
-        this.streamWithRateControl(nodeStream, signal, resolve, track.url || 'unknown');
-      });
-    } catch (err: any) {
-      clearInterval(silenceInterval);
-      const fetchTime = ((Date.now() - fetchStart) / 1000).toFixed(2);
-      if (err.name === 'AbortError') {
-        console.log(`[StreamManager] ⊗ Fetch aborted for "${track.title}" (${fetchTime}s)`);
-        return;
-      }
-      if (err.name === 'TimeoutError') {
-        console.error(`[StreamManager] ⚠️  Fetch timeout (10s) for "${track.title}" - ${track.url}`);
-        return;
-      }
-      console.error(`[StreamManager] ⚠️  Error fetching "${track.title}" (${fetchTime}s):`, err.message, `-`, track.url);
-    }
   }
 
   private streamWithRateControl(

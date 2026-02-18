@@ -18,12 +18,16 @@ export declare class StreamManager {
     private abortController;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     private targetBitrate;
-    /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
-    private static readonly SILENCE_FRAME;
     /** 割り込み再生用 */
     private interruptTracks;
     private isPlayingInterrupt;
-    constructor(musicDir: string);
+    /** キャッシュディレクトリ */
+    private cacheDir;
+    constructor(musicDir: string, cacheDir: string);
+    /** URLトラックをキャッシュディレクトリにダウンロード */
+    downloadToCache(url: string, id: string): Promise<string>;
+    /** キャッシュファイルを削除 */
+    deleteCacheFile(id: string): void;
     loadPlaylist(playlistPath: string): Promise<number>;
     private loadFromPlaylistFile;
     private buildTrackInfo;
@@ -60,7 +64,6 @@ export declare class StreamManager {
     private getCurrentTitle;
     private playTrack;
     private playLocalTrack;
-    private playUrlTrack;
     private streamWithRateControl;
     private broadcast;
 }

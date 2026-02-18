@@ -17,7 +17,7 @@ export function createScheduleRoutes(scheduleManager) {
      * Body: { name, cron, tracks: [{ type, path?, url?, title?, artist? }], enabled? }
      * 後方互換: track (単一) も受付
      */
-    router.post('/schedule/programs', requireApiKey, (req, res) => {
+    router.post('/schedule/programs', requireApiKey, async (req, res) => {
         try {
             const { name, cron, tracks: rawTracks, track, enabled } = req.body;
             // 後方互換: track (単一) → tracks (配列)
@@ -32,7 +32,7 @@ export function createScheduleRoutes(scheduleManager) {
                     return;
                 }
             }
-            const program = scheduleManager.addProgram({ name, cron, tracks, enabled });
+            const program = await scheduleManager.addProgram({ name, cron, tracks, enabled });
             res.json({ ok: true, program });
         }
         catch (err) {
@@ -42,9 +42,9 @@ export function createScheduleRoutes(scheduleManager) {
     /**
      * PUT /schedule/programs/:id — 番組更新
      */
-    router.put('/schedule/programs/:id', requireApiKey, (req, res) => {
+    router.put('/schedule/programs/:id', requireApiKey, async (req, res) => {
         try {
-            const program = scheduleManager.updateProgram(req.params.id, req.body);
+            const program = await scheduleManager.updateProgram(req.params.id, req.body);
             res.json({ ok: true, program });
         }
         catch (err) {

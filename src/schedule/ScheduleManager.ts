@@ -30,7 +30,7 @@ export class ScheduleManager {
   }
 
   /** schedule.json を読み込み、有効なジョブを登録（旧 track → tracks 自動マイグレーション） */
-  load(): number {
+  async load(): Promise<number> {
     if (fs.existsSync(this.schedulePath)) {
       try {
         const raw = fs.readFileSync(this.schedulePath, 'utf-8');
@@ -43,11 +43,20 @@ export class ScheduleManager {
             delete p.track;
             needsSave = true;
           }
+          // トラックにIDが無い場合、自動付与
+          if (p.tracks) {
+            for (const t of p.tracks) {
+              if (!t.id) {
+                t.id = crypto.randomUUID();
+                needsSave = true;
+              }
+            }
+          }
           return p as ScheduledProgram;
         });
         if (needsSave) {
           this.save();
-          console.log('[ScheduleManager] Migrated schedule.json: track → tracks');
+          console.log('[ScheduleManager] Migrated schedule.json (assigned track IDs)');
         }
       } catch (err) {
         console.error('[ScheduleManager] Failed to parse schedule.json:', err);
@@ -55,6 +64,11 @@ export class ScheduleManager {
       }
     } else {
       this.programs = [];
+    }
+
+    // 既存プログラムのURLトラックを事前ダウンロード
+    for (const program of this.programs) {
+      await this.cacheUrlTracks(program.tracks);
     }
 
     this.registerAllJobs();
@@ -83,7 +97,7 @@ export class ScheduleManager {
     });
   }
 
-  addProgram(input: Omit<ScheduledProgram, 'id'>): ScheduledProgram {
+  async addProgram(input: Omit<ScheduledProgram, 'id'>): Promise<ScheduledProgram> {
     if (!cron.validate(input.cron)) {
       throw new Error(`Invalid cron expression: ${input.cron}`);
     }
@@ -99,6 +113,11 @@ export class ScheduleManager {
         tracks: input.tracks,
         enabled: input.enabled !== undefined ? input.enabled : true,
       };
+      // 旧URLトラックのキャッシュを削除
+      this.deleteCacheForTracks(existing.tracks);
+      // 新URLトラックを即時ダウンロード
+      await this.cacheUrlTracks(program.tracks);
+
       this.programs[existingIndex] = program;
       this.save();
       this.unregisterJob(existing.id);
@@ -114,18 +133,28 @@ export class ScheduleManager {
       tracks: input.tracks,
       enabled: input.enabled !== undefined ? input.enabled : true,
     };
+
+    // URLトラックを即時ダウンロード
+    await this.cacheUrlTracks(program.tracks);
+
     this.programs.push(program);
     this.save();
     this.registerJob(program);
     return program;
   }
 
-  updateProgram(id: string, input: Partial<Omit<ScheduledProgram, 'id'>>): ScheduledProgram {
+  async updateProgram(id: string, input: Partial<Omit<ScheduledProgram, 'id'>>): Promise<ScheduledProgram> {
     const index = this.programs.findIndex((p) => p.id === id);
     if (index === -1) throw new Error(`Program not found: ${id}`);
 
     if (input.cron && !cron.validate(input.cron)) {
       throw new Error(`Invalid cron expression: ${input.cron}`);
+    }
+
+    // tracksが変更される場合、旧キャッシュ削除 → 新キャッシュダウンロード
+    if (input.tracks) {
+      this.deleteCacheForTracks(this.programs[index].tracks);
+      await this.cacheUrlTracks(input.tracks);
     }
 
     const program = { ...this.programs[index], ...input };
@@ -141,6 +170,10 @@ export class ScheduleManager {
   deleteProgram(id: string): void {
     const index = this.programs.findIndex((p) => p.id === id);
     if (index === -1) throw new Error(`Program not found: ${id}`);
+
+    // URLトラックのキャッシュを即時削除
+    this.deleteCacheForTracks(this.programs[index].tracks);
+
     this.programs.splice(index, 1);
     this.save();
     this.unregisterJob(id);
@@ -187,6 +220,28 @@ export class ScheduleManager {
     if (task) {
       task.stop();
       this.cronJobs.delete(id);
+    }
+  }
+
+  /** URLトラックを事前ダウンロード */
+  private async cacheUrlTracks(tracks: PlaylistFileTrack[]): Promise<void> {
+    for (const track of tracks) {
+      if (track.type === 'url' && track.url && track.id) {
+        try {
+          await this.streamManager.downloadToCache(track.url, track.id);
+        } catch (err: any) {
+          console.error(`[ScheduleManager] ⚠️  Failed to cache "${track.title}": ${err.message}`);
+        }
+      }
+    }
+  }
+
+  /** URLトラックのキャッシュを削除 */
+  private deleteCacheForTracks(tracks: PlaylistFileTrack[]): void {
+    for (const track of tracks) {
+      if (track.type === 'url' && track.id) {
+        this.streamManager.deleteCacheFile(track.id);
+      }
     }
   }
 }
