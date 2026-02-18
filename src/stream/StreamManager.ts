@@ -555,6 +555,7 @@ export class StreamManager {
 
   private async playLocalTrack(track: TrackInfo): Promise<void> {
     this.stopSilence(); // 準備完了、無音→トラック再生に移行
+    console.log(`[StreamManager] ▶ Track ready: "${track.title}"`);
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -640,6 +641,7 @@ export class StreamManager {
   /** 無音フレームの定期送信を開始（トラック間ギャップを埋める） */
   private startSilence(): void {
     if (this.silenceInterval) return;
+    console.log('[StreamManager] 🔇 Silence stream started');
     this.silenceInterval = setInterval(() => {
       if (this.clients.size > 0) {
         this.broadcast(StreamManager.SILENCE_FRAME);
@@ -652,6 +654,7 @@ export class StreamManager {
     if (this.silenceInterval) {
       clearInterval(this.silenceInterval);
       this.silenceInterval = null;
+      console.log('[StreamManager] 🔊 Silence stream stopped');
     }
   }
 

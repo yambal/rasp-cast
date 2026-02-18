@@ -475,6 +475,7 @@ export class StreamManager {
     }
     async playLocalTrack(track) {
         this.stopSilence(); // 準備完了、無音→トラック再生に移行
+        console.log(`[StreamManager] ▶ Track ready: "${track.title}"`);
         this.abortController = new AbortController();
         const { signal } = this.abortController;
         return new Promise((resolve) => {
@@ -543,6 +544,7 @@ export class StreamManager {
     startSilence() {
         if (this.silenceInterval)
             return;
+        console.log('[StreamManager] 🔇 Silence stream started');
         this.silenceInterval = setInterval(() => {
             if (this.clients.size > 0) {
                 this.broadcast(StreamManager.SILENCE_FRAME);
@@ -554,6 +556,7 @@ export class StreamManager {
         if (this.silenceInterval) {
             clearInterval(this.silenceInterval);
             this.silenceInterval = null;
+            console.log('[StreamManager] 🔊 Silence stream stopped');
         }
     }
     broadcast(chunk) {
