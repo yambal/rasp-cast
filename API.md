@@ -29,6 +29,7 @@ API キーは環境変数 `API_KEY` または `.env` ファイルで設定しま
 | GET | `/playlist` | 不要 | プレイリスト取得 |
 | GET | `/cache` | 不要 | キャッシュ状態 |
 | GET | `/schedule` | 不要 | スケジュール番組一覧 |
+| GET | `/api-docs` | 不要 | API リファレンス（text/plain） |
 | POST | `/skip` | 必要 | 次の曲へスキップ |
 | POST | `/skip/:id` | 必要 | 指定トラックへジャンプ |
 | PUT | `/playlist` | 必要 | プレイリスト全置換 |
@@ -89,7 +90,7 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 
 ```json
 {
-  "version": "0.2.0",
+  "version": "0.4.1",
   "isStreaming": true,
   "isPlayingInterrupt": false,
   "listeners": 2,
@@ -100,7 +101,9 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
     "filename": "song.mp3"
   },
   "totalTracks": 10,
-  "currentIndex": 3
+  "currentIndex": 3,
+  "stationName": "FM ETS2 JP",
+  "streamUrl": "http://your-server:8000/stream"
 }
 ```
 
@@ -113,6 +116,8 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 | `currentTrack` | object \| null | 現在再生中のトラック |
 | `totalTracks` | number | プレイリストの総トラック数 |
 | `currentIndex` | number | 現在の再生位置（0始まり） |
+| `stationName` | string | 局名（環境変数 `STATION_NAME`） |
+| `streamUrl` | string | 公開ストリーム URL（環境変数 `PUBLIC_STREAM_URL`、未設定時は空文字） |
 
 ---
 
@@ -124,6 +129,7 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 
 ```json
 {
+  "shuffle": true,
   "tracks": [
     {
       "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -143,6 +149,10 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
   ]
 }
 ```
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `shuffle` | boolean | シャッフル再生が有効かどうか |
 
 ### トラックオブジェクト
 
@@ -295,12 +305,18 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 
 ```json
 {
+  "shuffle": true,
   "tracks": [
     { "type": "file", "path": "music/song1.mp3" },
     { "type": "url", "url": "https://example.com/song2.mp3", "title": "Song 2", "artist": "Artist" }
   ]
 }
 ```
+
+| フィールド | 必須 | 説明 |
+|---|---|---|
+| `shuffle` | いいえ | シャッフル再生の有効/無効（デフォルト: 現在値を維持） |
+| `tracks` | はい | トラック配列 |
 
 ### レスポンス
 
@@ -604,6 +620,26 @@ UUID を指定してトラックを削除します。
 
 ---
 
+## GET /api-docs
+
+この API リファレンス（API.md）を `text/plain` で返します。AI やプログラムから API 仕様を直接取得するためのエンドポイントです。
+
+### レスポンスヘッダー
+
+```
+Content-Type: text/plain; charset=utf-8
+```
+
+### 使用例
+
+```bash
+curl http://localhost:3000/api-docs
+```
+
+ブラウザで閲覧する場合は `http://localhost:3000/?api` を使用してください。
+
+---
+
 ## エラーレスポンス
 
 ### 401 Unauthorized
@@ -698,4 +734,7 @@ curl -X PUT -H "Authorization: Bearer YOUR_API_KEY" \
 # スケジュール番組削除
 curl -X DELETE -H "Authorization: Bearer YOUR_API_KEY" \
   http://localhost:3000/schedule/programs/550e8400-e29b-41d4-a716-446655440000
+
+# API リファレンス取得（テキスト）
+curl http://localhost:3000/api-docs
 ```

@@ -22,6 +22,9 @@ npm run dev
 
 - ストリーム: `http://localhost:3000/stream`（ブラウザや VLC で再生）
 - ダッシュボード: `http://localhost:3000/`
+- 管理画面: `http://localhost:3000/?admin`
+- API リファレンス: `http://localhost:3000/?api`（ブラウザ表示）
+- API ドキュメント（テキスト）: `http://localhost:3000/api-docs`（AI / プログラム向け）
 
 ## 環境変数
 
@@ -75,7 +78,9 @@ PUBLIC_STREAM_URL=http://your-server:8000/stream
 | GET | `/stream` | MP3 ストリーム（ICY メタデータ対応） |
 | GET | `/status` | 配信状態（バージョン、リスナー数、現在の曲、局名、ストリーム URL） |
 | GET | `/playlist` | プレイリスト取得（各トラックに UUID 付き） |
+| GET | `/cache` | キャッシュ状態（ファイル一覧・合計サイズ） |
 | GET | `/schedule` | スケジュール番組一覧（次回実行時刻付き） |
+| GET | `/api-docs` | API リファレンス（text/plain、AI / プログラム向け） |
 
 ### 管理エンドポイント（`Authorization: Bearer <API_KEY>` 必須）
 
@@ -87,6 +92,7 @@ PUBLIC_STREAM_URL=http://your-server:8000/stream
 | POST | `/playlist/tracks` | トラック追加（UUID 自動付与、レスポンスに `id` を返却） |
 | DELETE | `/playlist/tracks/:id` | UUID 指定でトラック削除 |
 | POST | `/interrupt` | 割り込み再生（現在の曲を中断し、指定トラック再生後に復帰） |
+| POST | `/cache/cleanup` | キャッシュ整合性チェック＆孤立ファイル削除 |
 | POST | `/schedule/programs` | スケジュール番組追加（同一 cron は上書き） |
 | PUT | `/schedule/programs/:id` | スケジュール番組更新 |
 | DELETE | `/schedule/programs/:id` | スケジュール番組削除 |

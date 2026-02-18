@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
@@ -28,6 +29,15 @@ async function main() {
     app.use(createPlaylistRoutes(streamManager));
     app.use(createInterruptRoutes(streamManager));
     app.use(createScheduleRoutes(scheduleManager));
+    // GET /api-docs - API.md を text/plain で返す（AI / プログラム向け）
+    const apiMdPath = path.join(__dirname, '..', 'API.md');
+    app.get('/api-docs', (_req, res) => {
+        if (!fs.existsSync(apiMdPath)) {
+            res.status(404).send('API.md not found');
+            return;
+        }
+        res.type('text/plain; charset=utf-8').send(fs.readFileSync(apiMdPath, 'utf-8'));
+    });
     // Serve frontend static files (production build)
     app.use(express.static(path.join(__dirname, '..', 'frontend', 'dist')));
     app.listen(PORT, () => {

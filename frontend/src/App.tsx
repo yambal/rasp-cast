@@ -6,14 +6,18 @@ import { NowPlaying } from './components/NowPlaying';
 import { ScheduleView } from './components/ScheduleView';
 import { HowToListen } from './components/HowToListen';
 import { AdminPanel } from './components/AdminPanel';
+import { ApiDocsPage } from './components/ApiDocsPage';
 
 export function App() {
-  // URLパラメータで管理画面を判定
-  const isAdmin = new URLSearchParams(window.location.search).has('admin');
+  // URLパラメータでページを判定
+  const params = new URLSearchParams(window.location.search);
 
-  // 管理画面の場合
-  if (isAdmin) {
+  if (params.has('admin')) {
     return <AdminPanel />;
+  }
+
+  if (params.has('api')) {
+    return <ApiDocsPage />;
   }
 
   // 公開ダッシュボード
