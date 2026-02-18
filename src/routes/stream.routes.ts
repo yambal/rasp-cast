@@ -48,6 +48,13 @@ export function createStreamRoutes(streamManager: StreamManager): Router {
   });
 
   /**
+   * GET /cache - キャッシュ状態
+   */
+  router.get('/cache', (_req, res) => {
+    res.json(streamManager.getCacheStatus());
+  });
+
+  /**
    * POST /skip - 次の曲へスキップ
    * POST /skip/:id - 指定 ID の曲へスキップ
    */

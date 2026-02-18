@@ -12,6 +12,7 @@ import {
 } from '@chakra-ui/react';
 import { useAuth } from '../hooks/useAuth';
 import { PlaylistManager } from './PlaylistManager';
+import { CacheStatus } from './CacheStatus';
 
 export function AdminPanel() {
   const { isAuthenticated, isVerifying, login, logout } = useAuth();
@@ -95,6 +96,7 @@ export function AdminPanel() {
       </Flex>
 
       <PlaylistManager />
+      <CacheStatus />
     </Container>
   );
 }

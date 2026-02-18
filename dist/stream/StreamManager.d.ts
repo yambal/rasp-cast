@@ -53,6 +53,16 @@ export declare class StreamManager {
         totalTracks: number;
         currentIndex: number;
     };
+    getCacheStatus(): {
+        files: {
+            id: string;
+            size: number;
+            title: string | undefined;
+            artist: string | undefined;
+        }[];
+        totalSize: number;
+        totalFiles: number;
+    };
     getPlaylist(): PlaylistFileTrack[];
     setPlaylist(tracks: PlaylistFileTrack[]): Promise<number>;
     addTrack(track: PlaylistFileTrack): Promise<{

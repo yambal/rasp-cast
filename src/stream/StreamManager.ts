@@ -329,6 +329,23 @@ export class StreamManager {
     };
   }
 
+  getCacheStatus() {
+    let cacheFiles: string[] = [];
+    try {
+      cacheFiles = fs.readdirSync(this.cacheDir).filter(f => f.endsWith('.mp3'));
+    } catch {
+      // cacheDir が存在しない場合
+    }
+    const files = cacheFiles.map(f => {
+      const id = path.basename(f, '.mp3');
+      const size = fs.statSync(path.join(this.cacheDir, f)).size;
+      const track = this.tracks.find(t => t.id === id);
+      return { id, size, title: track?.title, artist: track?.artist };
+    });
+    const totalSize = files.reduce((sum, f) => sum + f.size, 0);
+    return { files, totalSize, totalFiles: files.length };
+  }
+
   getPlaylist(): PlaylistFileTrack[] {
     return this.tracks.map((t) => {
       if (t.type === 'file') {
