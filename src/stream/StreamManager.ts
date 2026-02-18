@@ -263,7 +263,7 @@ export class StreamManager {
     while (this.isStreaming) {
       // 割り込みトラックが待機中ならプレイリストより先に再生
       if (this.interruptTracks.length > 0) {
-        await this.playInterrupt(); // 内部で startSilence/stopSilence を制御
+        await this.playInterrupt();
         consecutiveSkips = 0;
         lastTrackEndTime = Date.now();
         continue;
@@ -277,7 +277,7 @@ export class StreamManager {
 
       const trackStart = Date.now();
       await this.playTrack(track);
-      this.startSilence(); // 曲終了直後に無音ストリーム開始
+      this.startSilence();
       const trackDuration = Date.now() - trackStart;
 
       // 再生時間が極端に短い場合はスキップ扱い（100ms未満 = 再生不可）
@@ -293,19 +293,14 @@ export class StreamManager {
       }
 
       lastTrackEndTime = Date.now();
-
-      // 割り込みで中断された場合は同じ曲を維持（次回再生時に再度再生）
-      if (this.interruptTracks.length > 0) {
-        continue;
-      }
-
       this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
+      // 割り込みトラックが待機中なら次のループ先頭で検出・再生される
     }
 
     this.stopSilence();
   }
 
-  /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを順次再生後プレイリストに復帰 */
+  /** 割り込み再生を要求する。現在の曲が自然終了した後、指定トラックを順次再生しプレイリストに復帰 */
   async interrupt(trackInputs: PlaylistFileTrack | PlaylistFileTrack[]): Promise<void> {
     const inputs = Array.isArray(trackInputs) ? trackInputs : [trackInputs];
     const tracks: TrackInfo[] = [];
@@ -313,7 +308,7 @@ export class StreamManager {
       tracks.push(await this.buildTrackInfo(input));
     }
     this.interruptTracks = tracks;
-    this.skip();
+    console.log(`[StreamManager] Interrupt queued: ${tracks.length} tracks (will play after current track ends)`);
   }
 
   private async playInterrupt(): Promise<void> {
@@ -337,7 +332,7 @@ export class StreamManager {
     }
 
     this.isPlayingInterrupt = false;
-    // 無音は稼働したまま main loop に戻る（次トラック再生時に停止される）
+    // main loop に戻り、通常プレイリストを再開
     console.log(`[StreamManager] Interrupt finished, played ${trackNumber - 1}/${totalTracks} tracks, resuming playlist`);
   }
 
