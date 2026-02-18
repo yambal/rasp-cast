@@ -6,6 +6,7 @@ export interface PlaylistFileTrack {
     url?: string;
     title?: string;
     artist?: string;
+    cached?: boolean;
 }
 export declare class StreamManager {
     private clients;
@@ -62,6 +63,26 @@ export declare class StreamManager {
         }[];
         totalSize: number;
         totalFiles: number;
+    };
+    /**
+     * キャッシュ整合性チェック＆クリーンアップ
+     * @param extraValidIds プレイリスト以外（スケジュール等）のURLトラックID
+     * @returns 孤立ファイル削除結果と欠損キャッシュ情報
+     */
+    cleanupCache(extraValidIds?: Set<string>): {
+        tracks: Array<{
+            id: string;
+            title: string;
+            url: string;
+            cached: boolean;
+            size: number | null;
+        }>;
+        orphaned: Array<{
+            id: string;
+            size: number;
+        }>;
+        deletedCount: number;
+        freedBytes: number;
     };
     getPlaylist(): PlaylistFileTrack[];
     setPlaylist(tracks: PlaylistFileTrack[]): Promise<number>;

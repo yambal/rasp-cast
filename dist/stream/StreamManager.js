@@ -103,6 +103,12 @@ export class StreamManager {
                     catch (err) {
                         console.error(`[StreamManager] ⚠️  Failed to cache "${entry.title}": ${err.message}`);
                     }
+                    // cached フラグをファイルのエントリに反映
+                    const cachePath = path.join(this.cacheDir, `${entry.id}.mp3`);
+                    const wasCached = entry.cached;
+                    entry.cached = fs.existsSync(cachePath);
+                    if (wasCached !== entry.cached)
+                        needsSave = true;
                 }
                 this.tracks.push(await this.buildTrackInfo(entry));
             }
@@ -110,10 +116,10 @@ export class StreamManager {
                 // 無効なエントリはスキップ
             }
         }
-        // IDを付与した場合、playlist.jsonに永続化
+        // 変更があればplaylist.jsonに永続化
         if (needsSave && this.playlistPath) {
             fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
-            console.log('[StreamManager] Assigned IDs to tracks and saved playlist.json');
+            console.log('[StreamManager] Updated playlist.json (IDs/cached flags)');
         }
     }
     async buildTrackInfo(entry) {
@@ -200,13 +206,37 @@ export class StreamManager {
         }
         this.isStreaming = true;
         console.log('[StreamManager] Streaming started');
+        let consecutiveSkips = 0;
+        let lastTrackEndTime = Date.now();
         while (this.isStreaming) {
             // 割り込みトラックが待機中ならプレイリストより先に再生
             if (this.interruptTracks.length > 0) {
                 await this.playInterrupt();
+                consecutiveSkips = 0;
+                lastTrackEndTime = Date.now();
                 continue;
             }
-            await this.playTrack(this.tracks[this.currentIndex]);
+            const track = this.tracks[this.currentIndex];
+            const gapMs = Date.now() - lastTrackEndTime;
+            if (gapMs > 500) {
+                console.warn(`[StreamManager] ⚠️  Track transition gap: ${gapMs}ms before "${track.title}"`);
+            }
+            const trackStart = Date.now();
+            await this.playTrack(track);
+            const trackDuration = Date.now() - trackStart;
+            // 再生時間が極端に短い場合はスキップ扱い（100ms未満 = 再生不可）
+            if (trackDuration < 100) {
+                consecutiveSkips++;
+                if (consecutiveSkips >= this.tracks.length) {
+                    console.error(`[StreamManager] 🔇 All ${this.tracks.length} tracks skipped — no playable tracks. Waiting 10s...`);
+                    await new Promise(r => setTimeout(r, 10_000));
+                    consecutiveSkips = 0;
+                }
+            }
+            else {
+                consecutiveSkips = 0;
+            }
+            lastTrackEndTime = Date.now();
             // 割り込みで中断された場合は同じ曲を維持（次回再生時に再度再生）
             if (this.interruptTracks.length > 0) {
                 continue;
@@ -286,6 +316,61 @@ export class StreamManager {
         const totalSize = files.reduce((sum, f) => sum + f.size, 0);
         return { files, totalSize, totalFiles: files.length };
     }
+    /**
+     * キャッシュ整合性チェック＆クリーンアップ
+     * @param extraValidIds プレイリスト以外（スケジュール等）のURLトラックID
+     * @returns 孤立ファイル削除結果と欠損キャッシュ情報
+     */
+    cleanupCache(extraValidIds = new Set()) {
+        // 有効なURLトラックIDを収集（プレイリスト）
+        const validIds = new Set(extraValidIds);
+        for (const track of this.tracks) {
+            if (track.type === 'url' && track.id) {
+                validIds.add(track.id);
+            }
+        }
+        // キャッシュディレクトリの実ファイルを取得
+        let cacheFiles = [];
+        try {
+            cacheFiles = fs.readdirSync(this.cacheDir).filter(f => f.endsWith('.mp3'));
+        }
+        catch {
+            // cacheDir が存在しない場合
+        }
+        const cachedIds = new Set(cacheFiles.map(f => path.basename(f, '.mp3')));
+        // 孤立ファイル検出＆削除
+        const orphaned = [];
+        let freedBytes = 0;
+        for (const file of cacheFiles) {
+            const id = path.basename(file, '.mp3');
+            if (!validIds.has(id)) {
+                const filePath = path.join(this.cacheDir, file);
+                const size = fs.statSync(filePath).size;
+                fs.unlinkSync(filePath);
+                console.log(`[StreamManager] Cleanup: deleted orphaned cache ${id} (${(size / 1024).toFixed(0)} KB)`);
+                orphaned.push({ id, size });
+                freedBytes += size;
+            }
+        }
+        // 全URLトラックの cached 状態を構築
+        const tracks = [];
+        for (const track of this.tracks) {
+            if (track.type === 'url' && track.id) {
+                const cached = cachedIds.has(track.id);
+                let size = null;
+                if (cached) {
+                    try {
+                        size = fs.statSync(path.join(this.cacheDir, `${track.id}.mp3`)).size;
+                    }
+                    catch { /* deleted as orphan or race */ }
+                }
+                tracks.push({ id: track.id, title: track.title, url: track.url || '', cached, size });
+            }
+        }
+        const missingCount = tracks.filter(t => !t.cached).length;
+        console.log(`[StreamManager] Cache cleanup: ${orphaned.length} orphaned deleted (${(freedBytes / 1024).toFixed(0)} KB freed), ${missingCount} missing`);
+        return { tracks, orphaned, deletedCount: orphaned.length, freedBytes };
+    }
     getPlaylist() {
         return this.tracks.map((t) => {
             if (t.type === 'file') {
@@ -294,7 +379,7 @@ export class StreamManager {
                     : undefined;
                 return { id: t.id, type: 'file', path: rel, title: t.title, artist: t.artist };
             }
-            return { id: t.id, type: 'url', url: t.url, title: t.title, artist: t.artist };
+            return { id: t.id, type: 'url', url: t.url, title: t.title, artist: t.artist, cached: t.cached };
         });
     }
     async setPlaylist(tracks) {
@@ -305,7 +390,6 @@ export class StreamManager {
             }
         }
         const playlist = { tracks };
-        fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
         // loadFromPlaylistFile 内でURLキャッシュ・TrackInfo構築を一括実行
         await this.loadFromPlaylistFile(playlist);
         this.adjustCurrentIndex();

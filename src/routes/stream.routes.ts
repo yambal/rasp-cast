@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import { ICY_METAINT } from '../stream/IcyMetadata.js';
 import type { StreamManager } from '../stream/StreamManager.js';
+import type { ScheduleManager } from '../schedule/ScheduleManager.js';
 import { requireApiKey } from '../middleware/auth.js';
 
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
 
-export function createStreamRoutes(streamManager: StreamManager): Router {
+export function createStreamRoutes(streamManager: StreamManager, scheduleManager?: ScheduleManager): Router {
   const router = Router();
 
   /**
@@ -52,6 +53,29 @@ export function createStreamRoutes(streamManager: StreamManager): Router {
    */
   router.get('/cache', (_req, res) => {
     res.json(streamManager.getCacheStatus());
+  });
+
+  /**
+   * POST /cache/cleanup - キャッシュ整合性チェック＆孤立ファイル削除
+   *
+   * プレイリスト・スケジュールのどちらにも属さないキャッシュファイルを削除する。
+   * キャッシュが欠けているURLトラックも報告する。
+   */
+  router.post('/cache/cleanup', requireApiKey, (_req, res) => {
+    // スケジュールのURLトラックIDを収集
+    const scheduleTrackIds = new Set<string>();
+    if (scheduleManager) {
+      for (const program of scheduleManager.getPrograms()) {
+        for (const track of program.tracks) {
+          if (track.type === 'url' && track.id) {
+            scheduleTrackIds.add(track.id);
+          }
+        }
+      }
+    }
+
+    const result = streamManager.cleanupCache(scheduleTrackIds);
+    res.json({ ok: true, ...result });
   });
 
   /**

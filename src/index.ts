@@ -30,7 +30,7 @@ async function main() {
   await scheduleManager.load();
 
   app.use(express.json());
-  app.use(createStreamRoutes(streamManager));
+  app.use(createStreamRoutes(streamManager, scheduleManager));
   app.use(createPlaylistRoutes(streamManager));
   app.use(createInterruptRoutes(streamManager));
   app.use(createScheduleRoutes(scheduleManager));

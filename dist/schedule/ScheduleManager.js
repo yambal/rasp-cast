@@ -49,10 +49,14 @@ export class ScheduleManager {
         else {
             this.programs = [];
         }
-        // 既存プログラムのURLトラックを事前ダウンロード
+        // 既存プログラムのURLトラックを事前ダウンロード & cached フラグ更新
+        let cacheUpdated = false;
         for (const program of this.programs) {
-            await this.cacheUrlTracks(program.tracks);
+            if (await this.cacheUrlTracks(program.tracks))
+                cacheUpdated = true;
         }
+        if (cacheUpdated)
+            this.save();
         this.registerAllJobs();
         console.log(`[ScheduleManager] Loaded ${this.programs.length} programs (${this.cronJobs.size} active)`);
         return this.programs.length;
@@ -184,24 +188,35 @@ export class ScheduleManager {
             this.cronJobs.delete(id);
         }
     }
-    /** URLトラックを事前ダウンロード */
+    /** URLトラックを事前ダウンロード & cached フラグ更新。変更があれば true を返す */
     async cacheUrlTracks(tracks) {
+        let changed = false;
         for (const track of tracks) {
             if (track.type === 'url' && track.url && track.id) {
                 try {
                     await this.streamManager.downloadToCache(track.url, track.id);
+                    if (!track.cached) {
+                        track.cached = true;
+                        changed = true;
+                    }
                 }
                 catch (err) {
                     console.error(`[ScheduleManager] ⚠️  Failed to cache "${track.title}": ${err.message}`);
+                    if (track.cached) {
+                        track.cached = false;
+                        changed = true;
+                    }
                 }
             }
         }
+        return changed;
     }
-    /** URLトラックのキャッシュを削除 */
+    /** URLトラックのキャッシュを削除 & cached フラグ更新 */
     deleteCacheForTracks(tracks) {
         for (const track of tracks) {
             if (track.type === 'url' && track.id) {
                 this.streamManager.deleteCacheFile(track.id);
+                track.cached = false;
             }
         }
     }
