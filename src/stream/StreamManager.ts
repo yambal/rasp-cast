@@ -58,6 +58,8 @@ export class StreamManager {
   private silenceFrame: Buffer = Buffer.alloc(0);
   /** 無音ストリーム制御用 */
   private silenceInterval: ReturnType<typeof setInterval> | null = null;
+  /** 最後にデータを送信した時刻（診断用） */
+  private lastBroadcastTime = 0;
   /** 割り込み再生用 */
   private interruptTracks: TrackInfo[] = [];
   private isPlayingInterrupt = false;
@@ -269,7 +271,8 @@ export class StreamManager {
 
     res.on('close', () => {
       this.clients.delete(client);
-      console.log(`[StreamManager] Client disconnected. Total: ${this.clients.size}`);
+      const gap = this.lastBroadcastTime ? Date.now() - this.lastBroadcastTime : -1;
+      console.log(`[StreamManager] Client disconnected. Total: ${this.clients.size} (last broadcast ${gap}ms ago)`);
     });
   }
 
@@ -572,8 +575,8 @@ export class StreamManager {
   }
 
   private async playLocalTrack(track: TrackInfo): Promise<void> {
-    this.stopSilence(); // 準備完了、無音→トラック再生に移行
-    console.log(`[StreamManager] ▶ Track ready: "${track.title}"`);
+    // 無音ストリームは streamWithRateControl 内の初回 broadcast 直前で停止する
+    // （レート制御の初期遅延中も無音フレームが送信され続け、ギャップが発生しない）
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -582,12 +585,12 @@ export class StreamManager {
 
       const onAbort = () => {
         stream.destroy();
-        this.startSilence(); // abort時即座に無音開始（レート制御待機中のギャップを埋める）
+        this.startSilence(); // abort時即座に無音開始
         resolve();
       };
       signal.addEventListener('abort', onAbort, { once: true });
 
-      this.streamWithRateControl(stream, signal, resolve, track.filename || 'unknown');
+      this.streamWithRateControl(stream, signal, resolve, track.title || track.filename || 'unknown');
     });
   }
 
@@ -604,6 +607,7 @@ export class StreamManager {
     const startTime = Date.now();
     let chunkQueue: Buffer[] = [];
     let isSending = false;
+    let isFirstBroadcast = true;
 
     const sendNextChunk = async () => {
       if (isSending || chunkQueue.length === 0 || signal.aborted) return;
@@ -623,6 +627,12 @@ export class StreamManager {
       }
 
       if (!signal.aborted) {
+        if (isFirstBroadcast) {
+          // 無音→トラック再生にシームレス移行（レート制御の待機完了後、データ送信直前に切替）
+          this.stopSilence();
+          console.log(`[StreamManager] ▶ Track ready: "${label}"`);
+          isFirstBroadcast = false;
+        }
         this.broadcast(buf);
       }
 
@@ -678,6 +688,7 @@ export class StreamManager {
   }
 
   private broadcast(chunk: Buffer): void {
+    this.lastBroadcastTime = Date.now();
     for (const client of this.clients) {
       if (client.res.destroyed) {
         this.clients.delete(client);

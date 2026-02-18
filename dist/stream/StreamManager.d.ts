@@ -23,6 +23,8 @@ export declare class StreamManager {
     private silenceFrame;
     /** 無音ストリーム制御用 */
     private silenceInterval;
+    /** 最後にデータを送信した時刻（診断用） */
+    private lastBroadcastTime;
     /** 割り込み再生用 */
     private interruptTracks;
     private isPlayingInterrupt;
