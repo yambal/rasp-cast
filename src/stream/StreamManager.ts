@@ -50,6 +50,17 @@ interface PlaylistFile {
 }
 
 export class StreamManager {
+  /** ストリーミングビットレート (kbps) */
+  private static readonly BITRATE_KBPS = 128;
+  /** トラック遷移で警告を出すギャップ閾値 (ms) */
+  private static readonly GAP_WARN_THRESHOLD_MS = 500;
+  /** レート制御の最大遅延 (ms) */
+  private static readonly MAX_RATE_DELAY_MS = 1000;
+  /** 再生不可とみなす最小再生時間 (ms) */
+  private static readonly MIN_TRACK_DURATION_MS = 100;
+  /** 全トラックスキップ時の待機時間 (ms) */
+  private static readonly ALL_SKIP_WAIT_MS = 10_000;
+
   private clients = new Set<ClientConnection>();
   private tracks: TrackInfo[] = [];
   private currentIndex = 0;
@@ -58,8 +69,6 @@ export class StreamManager {
   private musicDir: string;
   private playlistPath: string = '';
   private abortController: AbortController | null = null;
-  /** MP3 ビットレート (kbps) に応じた送信レート制御 */
-  private targetBitrate = 128; // kbps
   /** 最後にデータを送信した時刻（診断用） */
   private lastBroadcastTime = 0;
   /** 割り込み再生用 */
@@ -75,6 +84,25 @@ export class StreamManager {
     this.cacheDir = cacheDir;
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
+  }
+
+  /** ffmpegでMP3を128kbps/44.1kHz/ステレオに正規化。成功時true、失敗時false */
+  private async transcodeWithFfmpeg(inputPath: string, outputPath: string): Promise<boolean> {
+    try {
+      await execFileAsync('ffmpeg', [
+        '-i', inputPath,
+        '-ar', '44100',
+        '-ab', '128k',
+        '-ac', '2',
+        '-f', 'mp3',
+        '-y',
+        outputPath,
+      ]);
+      return true;
+    } catch (err: any) {
+      console.warn(`[StreamManager] ffmpeg failed: ${err.message}`);
+      return false;
     }
   }
 
@@ -104,19 +132,10 @@ export class StreamManager {
     await pipeline(nodeStream, writeStream);
 
     // ffmpegで正規化 (128kbps, 44.1kHz, stereo)
-    try {
-      await execFileAsync('ffmpeg', [
-        '-i', rawPath,
-        '-ar', '44100',
-        '-ab', '128k',
-        '-ac', '2',
-        '-f', 'mp3',
-        '-y',
-        tempPath,
-      ]);
+    const ok = await this.transcodeWithFfmpeg(rawPath, tempPath);
+    if (ok) {
       console.log(`[StreamManager] Normalized: ${id} (128kbps/44.1kHz)`);
-    } catch (err: any) {
-      console.warn(`[StreamManager] ffmpeg normalization failed: ${err.message}, using raw file`);
+    } else {
       fs.renameSync(rawPath, tempPath);
     }
 
@@ -146,26 +165,15 @@ export class StreamManager {
     console.log(`[StreamManager] Normalizing file: ${path.basename(sourcePath)}`);
     const tempPath = cachePath + '.tmp';
 
-    try {
-      await execFileAsync('ffmpeg', [
-        '-i', sourcePath,
-        '-ar', '44100',
-        '-ab', '128k',
-        '-ac', '2',
-        '-f', 'mp3',
-        '-y',
-        tempPath,
-      ]);
+    const ok = await this.transcodeWithFfmpeg(sourcePath, tempPath);
+    if (ok) {
       fs.renameSync(tempPath, cachePath);
       const size = fs.statSync(cachePath).size;
       console.log(`[StreamManager] Normalized: ${path.basename(sourcePath)} → ${cacheName} (${(size / 1024).toFixed(0)} KB)`);
       return cachePath;
-    } catch (err: any) {
-      console.warn(`[StreamManager] ffmpeg normalization failed for ${path.basename(sourcePath)}: ${err.message}, using original`);
-      // 一時ファイル削除
-      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
-      return sourcePath;
     }
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    return sourcePath;
   }
 
   /** キャッシュファイルを削除 */
@@ -224,8 +232,8 @@ export class StreamManager {
           if (wasCached !== entry.cached) needsSave = true;
         }
         this.tracks.push(await this.buildTrackInfo(entry));
-      } catch {
-        // 無効なエントリはスキップ
+      } catch (err: any) {
+        console.warn(`[StreamManager] Skipping invalid track "${entry.title || entry.path || entry.url}": ${err.message}`);
       }
     }
     // 変更があればplaylist.jsonに永続化
@@ -351,21 +359,20 @@ export class StreamManager {
 
       const track = this.tracks[this.currentIndex];
       const gapMs = Date.now() - lastTrackEndTime;
-      if (gapMs > 500) {
+      if (gapMs > StreamManager.GAP_WARN_THRESHOLD_MS) {
         console.warn(`[StreamManager] ⚠️  Track transition gap: ${gapMs}ms before "${track.title}"`);
       }
 
       const trackStart = Date.now();
       await this.playTrack(track);
-      this.startSilence();
       const trackDuration = Date.now() - trackStart;
 
       // 再生時間が極端に短い場合はスキップ扱い（100ms未満 = 再生不可）
-      if (trackDuration < 100) {
+      if (trackDuration < StreamManager.MIN_TRACK_DURATION_MS) {
         consecutiveSkips++;
         if (consecutiveSkips >= this.tracks.length) {
           console.error(`[StreamManager] 🔇 All ${this.tracks.length} tracks skipped — no playable tracks. Waiting 10s...`);
-          await new Promise(r => setTimeout(r, 10_000));
+          await new Promise(r => setTimeout(r, StreamManager.ALL_SKIP_WAIT_MS));
           consecutiveSkips = 0;
         }
       } else {
@@ -380,7 +387,6 @@ export class StreamManager {
       // 割り込みトラックが待機中なら次のループ先頭で検出・再生される
     }
 
-    this.stopSilence();
   }
 
   /** 割り込み再生を要求する。現在の曲が自然終了した後、指定トラックを順次再生しプレイリストに復帰 */
@@ -407,7 +413,6 @@ export class StreamManager {
 
       const startTime = Date.now();
       await this.playTrack(track);
-      this.startSilence(); // 割り込みトラック間も無音で埋める
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       console.log(`[StreamManager] Finished interrupt [${trackNumber}/${totalTracks}]: "${track.title}" (${duration}s)`);
@@ -426,6 +431,7 @@ export class StreamManager {
   }
 
   skipTo(id: string): boolean {
+    if (this.tracks.length === 0) return false;
     const index = this.tracks.findIndex((t) => t.id === id);
     if (index === -1) return false;
     // 指定トラックの1つ前にセット（skip後に+1されるため）
@@ -653,7 +659,7 @@ export class StreamManager {
   ): void {
     // ビットレートに合わせた送信レート制御
     // 128kbps = 16000 bytes/sec
-    const bytesPerSecond = (this.targetBitrate * 1000) / 8;
+    const bytesPerSecond = (StreamManager.BITRATE_KBPS * 1000) / 8;
     let totalBytesSent = 0;
     const startTime = Date.now();
     let chunkQueue: Buffer[] = [];
@@ -678,7 +684,7 @@ export class StreamManager {
         console.log(`[StreamManager] ▶ Track ready: "${label}"`);
         isFirstBroadcast = false;
       } else if (delay > 0) {
-        await new Promise(r => setTimeout(r, Math.min(delay, 1000)));
+        await new Promise(r => setTimeout(r, Math.min(delay, StreamManager.MAX_RATE_DELAY_MS)));
       }
 
       if (!signal.aborted) {
@@ -702,7 +708,6 @@ export class StreamManager {
       const waitForQueue = setInterval(() => {
         if (chunkQueue.length === 0 && !isSending) {
           clearInterval(waitForQueue);
-          signal.removeEventListener('abort', () => {});
           resolve();
         }
       }, 50);
@@ -715,15 +720,6 @@ export class StreamManager {
     });
   }
 
-
-  /** トラック間ギャップのログ記録（無音フレーム送信は廃止 — デコーダー互換性問題のため） */
-  private startSilence(): void {
-    // no-op: 初回チャンク即時送信でギャップを最小化する方式に移行
-  }
-
-  private stopSilence(): void {
-    // no-op
-  }
 
   private broadcast(chunk: Buffer): void {
     this.lastBroadcastTime = Date.now();

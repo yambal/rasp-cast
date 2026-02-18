@@ -9,6 +9,16 @@ export interface PlaylistFileTrack {
     cached?: boolean;
 }
 export declare class StreamManager {
+    /** ストリーミングビットレート (kbps) */
+    private static readonly BITRATE_KBPS;
+    /** トラック遷移で警告を出すギャップ閾値 (ms) */
+    private static readonly GAP_WARN_THRESHOLD_MS;
+    /** レート制御の最大遅延 (ms) */
+    private static readonly MAX_RATE_DELAY_MS;
+    /** 再生不可とみなす最小再生時間 (ms) */
+    private static readonly MIN_TRACK_DURATION_MS;
+    /** 全トラックスキップ時の待機時間 (ms) */
+    private static readonly ALL_SKIP_WAIT_MS;
     private clients;
     private tracks;
     private currentIndex;
@@ -17,8 +27,6 @@ export declare class StreamManager {
     private musicDir;
     private playlistPath;
     private abortController;
-    /** MP3 ビットレート (kbps) に応じた送信レート制御 */
-    private targetBitrate;
     /** 最後にデータを送信した時刻（診断用） */
     private lastBroadcastTime;
     /** 割り込み再生用 */
@@ -29,6 +37,8 @@ export declare class StreamManager {
     /** キャッシュディレクトリ */
     private cacheDir;
     constructor(musicDir: string, cacheDir: string);
+    /** ffmpegでMP3を128kbps/44.1kHz/ステレオに正規化。成功時true、失敗時false */
+    private transcodeWithFfmpeg;
     /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
     downloadToCache(url: string, id: string): Promise<string>;
     /**
@@ -110,8 +120,5 @@ export declare class StreamManager {
     private playTrack;
     private playLocalTrack;
     private streamWithRateControl;
-    /** トラック間ギャップのログ記録（無音フレーム送信は廃止 — デコーダー互換性問題のため） */
-    private startSilence;
-    private stopSilence;
     private broadcast;
 }
