@@ -54,10 +54,6 @@ export class StreamManager {
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
-  /** 正規エンコード済み無音 MP3 フレーム（assets/silence.mp3 から読み込み） */
-  private silenceFrame: Buffer = Buffer.alloc(0);
-  /** 無音ストリーム制御用 */
-  private silenceInterval: ReturnType<typeof setInterval> | null = null;
   /** 最後にデータを送信した時刻（診断用） */
   private lastBroadcastTime = 0;
   /** 割り込み再生用 */
@@ -71,31 +67,6 @@ export class StreamManager {
     this.cacheDir = cacheDir;
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
-    }
-    this.loadSilenceFrame();
-  }
-
-  /** assets/silence.mp3 から最初の MP3 フレームを抽出 */
-  private loadSilenceFrame(): void {
-    const silencePath = path.join(this.musicDir, '..', 'assets', 'silence.mp3');
-    try {
-      const data = fs.readFileSync(silencePath);
-      // 最初の sync word (0xFFFB) を探してフレームを抽出
-      for (let i = 0; i < data.length - 4; i++) {
-        if (data[i] === 0xFF && (data[i + 1] & 0xE0) === 0xE0) {
-          // フレームサイズを計算（MPEG1 Layer3 128kbps 44100Hz）
-          const padding = (data[i + 2] & 0x02) >> 1;
-          const frameSize = 417 + padding;
-          if (i + frameSize <= data.length) {
-            this.silenceFrame = data.subarray(i, i + frameSize);
-            console.log(`[StreamManager] Loaded silence frame: ${frameSize} bytes from ${silencePath}`);
-            return;
-          }
-        }
-      }
-      console.error('[StreamManager] No valid MP3 frame found in silence.mp3');
-    } catch (err: any) {
-      console.error(`[StreamManager] Failed to load silence.mp3: ${err.message}`);
     }
   }
 
@@ -575,8 +546,6 @@ export class StreamManager {
   }
 
   private async playLocalTrack(track: TrackInfo): Promise<void> {
-    // 無音ストリームは streamWithRateControl 内の初回 broadcast 直前で停止する
-    // （レート制御の初期遅延中も無音フレームが送信され続け、ギャップが発生しない）
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -585,7 +554,6 @@ export class StreamManager {
 
       const onAbort = () => {
         stream.destroy();
-        this.startSilence(); // abort時即座に無音開始
         resolve();
       };
       signal.addEventListener('abort', onAbort, { once: true });
@@ -621,18 +589,16 @@ export class StreamManager {
       const actualTime = Date.now() - startTime;
       const delay = expectedTime - actualTime;
 
-      // 送信が速すぎる場合は待機（最大1秒まで）
-      if (delay > 0) {
+      // 初回チャンクは即時送信（トラック間ギャップを最小化）
+      // 2回目以降はレート制御に従い待機
+      if (isFirstBroadcast) {
+        console.log(`[StreamManager] ▶ Track ready: "${label}"`);
+        isFirstBroadcast = false;
+      } else if (delay > 0) {
         await new Promise(r => setTimeout(r, Math.min(delay, 1000)));
       }
 
       if (!signal.aborted) {
-        if (isFirstBroadcast) {
-          // 無音→トラック再生にシームレス移行（レート制御の待機完了後、データ送信直前に切替）
-          this.stopSilence();
-          console.log(`[StreamManager] ▶ Track ready: "${label}"`);
-          isFirstBroadcast = false;
-        }
         this.broadcast(buf);
       }
 
@@ -667,24 +633,13 @@ export class StreamManager {
   }
 
 
-  /** 無音フレームの定期送信を開始（トラック間ギャップを埋める） */
+  /** トラック間ギャップのログ記録（無音フレーム送信は廃止 — デコーダー互換性問題のため） */
   private startSilence(): void {
-    if (this.silenceInterval || this.silenceFrame.length === 0) return;
-    console.log('[StreamManager] 🔇 Silence stream started');
-    this.silenceInterval = setInterval(() => {
-      if (this.clients.size > 0) {
-        this.broadcast(this.silenceFrame);
-      }
-    }, 26); // 26ms ≈ 1フレーム（128kbps/44.1kHz）
+    // no-op: 初回チャンク即時送信でギャップを最小化する方式に移行
   }
 
-  /** 無音フレームの送信を停止（トラック再生に移行） */
   private stopSilence(): void {
-    if (this.silenceInterval) {
-      clearInterval(this.silenceInterval);
-      this.silenceInterval = null;
-      console.log('[StreamManager] 🔊 Silence stream stopped');
-    }
+    // no-op
   }
 
   private broadcast(chunk: Buffer): void {
