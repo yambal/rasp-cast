@@ -37,8 +37,15 @@ export declare class StreamManager {
     /** キャッシュディレクトリ */
     private cacheDir;
     constructor(musicDir: string, cacheDir: string);
-    /** ffmpegでMP3を128kbps/44.1kHz/ステレオに正規化。成功時true、失敗時false */
+    /** ラウドネス測定値 (loudnorm 1st pass) */
+    private static readonly LOUDNORM_TARGET;
+    /**
+     * ffmpegでMP3を128kbps/44.1kHz/ステレオに正規化 + ラウドネスノーマライズ(-14 LUFS, 2-pass)。
+     * 成功時true、失敗時false
+     */
     private transcodeWithFfmpeg;
+    /** loudnorm 1st pass: ラウドネス測定値を取得 */
+    private measureLoudness;
     /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
     downloadToCache(url: string, id: string): Promise<string>;
     /**

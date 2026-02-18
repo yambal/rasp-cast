@@ -47,11 +47,23 @@ export class StreamManager {
             fs.mkdirSync(this.cacheDir, { recursive: true });
         }
     }
-    /** ffmpegでMP3を128kbps/44.1kHz/ステレオに正規化。成功時true、失敗時false */
+    /** ラウドネス測定値 (loudnorm 1st pass) */
+    static LOUDNORM_TARGET = 'I=-14:TP=-1:LRA=11';
+    /**
+     * ffmpegでMP3を128kbps/44.1kHz/ステレオに正規化 + ラウドネスノーマライズ(-14 LUFS, 2-pass)。
+     * 成功時true、失敗時false
+     */
     async transcodeWithFfmpeg(inputPath, outputPath) {
         try {
+            // Pass 1: ラウドネス測定
+            const measured = await this.measureLoudness(inputPath);
+            // Pass 2: 測定値を使ってリニアモードで正規化
+            const filterArgs = measured
+                ? `loudnorm=${StreamManager.LOUDNORM_TARGET}:measured_I=${measured.input_i}:measured_TP=${measured.input_tp}:measured_LRA=${measured.input_lra}:measured_thresh=${measured.input_thresh}:offset=${measured.target_offset}:linear=true`
+                : `loudnorm=${StreamManager.LOUDNORM_TARGET}`;
             await execFileAsync('ffmpeg', [
                 '-i', inputPath,
+                '-af', filterArgs,
                 '-ar', '44100',
                 '-ab', '128k',
                 '-ac', '2',
@@ -64,6 +76,32 @@ export class StreamManager {
         catch (err) {
             console.warn(`[StreamManager] ffmpeg failed: ${err.message}`);
             return false;
+        }
+    }
+    /** loudnorm 1st pass: ラウドネス測定値を取得 */
+    async measureLoudness(inputPath) {
+        try {
+            const { stderr } = await execFileAsync('ffmpeg', [
+                '-i', inputPath,
+                '-af', `loudnorm=${StreamManager.LOUDNORM_TARGET}:print_format=json`,
+                '-f', 'null',
+                '-',
+            ]);
+            // ffmpeg は stderr に JSON ブロックを出力する
+            const jsonMatch = stderr.match(/\{[^{}]*"input_i"[^{}]*\}/);
+            if (!jsonMatch)
+                return null;
+            const data = JSON.parse(jsonMatch[0]);
+            return {
+                input_i: data.input_i,
+                input_tp: data.input_tp,
+                input_lra: data.input_lra,
+                input_thresh: data.input_thresh,
+                target_offset: data.target_offset,
+            };
+        }
+        catch {
+            return null;
         }
     }
     /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
@@ -344,8 +382,8 @@ export class StreamManager {
         for (const input of inputs) {
             tracks.push(await this.buildTrackInfo(input));
         }
-        this.interruptTracks = tracks;
-        console.log(`[StreamManager] Interrupt queued: ${tracks.length} tracks (will play after current track ends)`);
+        this.interruptTracks.push(...tracks);
+        console.log(`[StreamManager] Interrupt queued: ${tracks.length} tracks added (total pending: ${this.interruptTracks.length})`);
     }
     async playInterrupt() {
         this.isPlayingInterrupt = true;
