@@ -4,6 +4,7 @@
 
 - Node.js v20 以上
 - npm
+- ffmpeg（MP3 正規化に使用。未インストール時はフォールバックで動作）
 
 ## ローカル起動
 
@@ -48,6 +49,7 @@ PUBLIC_STREAM_URL=http://your-server:8000/stream
 
 ```json
 {
+  "shuffle": true,
   "tracks": [
     { "type": "file", "path": "music/song.mp3" },
     { "type": "url", "url": "https://example.com/track.mp3", "title": "Remote Track", "artist": "Artist" }
@@ -55,9 +57,14 @@ PUBLIC_STREAM_URL=http://your-server:8000/stream
 }
 ```
 
+- `shuffle` — `true` でループ完了時にプレイリストをシャッフル（デフォルト: `false`）
 - `type: "file"` — ローカル MP3。`path` はプロジェクトルートからの相対パス。title/artist は ID3 タグから自動取得
 - `type: "url"` — リモート MP3 URL。`title` / `artist` を JSON で指定
 - `playlist.json` がなければ `music/` ディレクトリを自動スキャン
+
+### MP3 正規化
+
+全トラック（file / url 両方）は起動時に ffmpeg で **128kbps / 44.1kHz / ステレオ** に自動変換されキャッシュされます。これによりトラック間のサンプリングレートやビットレートの差異によるデコーダー停止を防ぎます。ffmpeg が未インストールの場合はオリジナルファイルがそのまま使用されます。
 
 ## API
 
@@ -119,6 +126,9 @@ curl -X POST http://localhost:3000/schedule/programs \
 ### 初回セットアップ
 
 ```bash
+# ffmpeg インストール（MP3 正規化に必要）
+sudo apt install ffmpeg
+
 cd /mnt/usbdata
 sudo git clone https://github.com/yambal/rasp-cast.git
 sudo chown -R $(whoami):$(whoami) rasp-cast
