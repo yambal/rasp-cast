@@ -54,6 +54,17 @@ export class StreamManager {
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
+  /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
+  private static readonly SILENCE_FRAME = (() => {
+    const frame = Buffer.alloc(417, 0);
+    frame[0] = 0xFF; // Sync
+    frame[1] = 0xFB; // MPEG1, Layer3, no CRC
+    frame[2] = 0x90; // 128kbps, 44100Hz
+    frame[3] = 0x00; // Stereo
+    return frame;
+  })();
+  /** 無音ストリーム制御用 */
+  private silenceInterval: ReturnType<typeof setInterval> | null = null;
   /** 割り込み再生用 */
   private interruptTracks: TrackInfo[] = [];
   private isPlayingInterrupt = false;
@@ -260,7 +271,7 @@ export class StreamManager {
     while (this.isStreaming) {
       // 割り込みトラックが待機中ならプレイリストより先に再生
       if (this.interruptTracks.length > 0) {
-        await this.playInterrupt();
+        await this.playInterrupt(); // 内部で startSilence/stopSilence を制御
         consecutiveSkips = 0;
         lastTrackEndTime = Date.now();
         continue;
@@ -274,6 +285,7 @@ export class StreamManager {
 
       const trackStart = Date.now();
       await this.playTrack(track);
+      this.startSilence(); // 曲終了直後に無音ストリーム開始
       const trackDuration = Date.now() - trackStart;
 
       // 再生時間が極端に短い場合はスキップ扱い（100ms未満 = 再生不可）
@@ -297,6 +309,8 @@ export class StreamManager {
 
       this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
     }
+
+    this.stopSilence();
   }
 
   /** 割り込み再生を要求する。現在の曲を中断し、指定トラックを順次再生後プレイリストに復帰 */
@@ -323,6 +337,7 @@ export class StreamManager {
 
       const startTime = Date.now();
       await this.playTrack(track);
+      this.startSilence(); // 割り込みトラック間も無音で埋める
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
 
       console.log(`[StreamManager] Finished interrupt [${trackNumber}/${totalTracks}]: "${track.title}" (${duration}s)`);
@@ -330,6 +345,7 @@ export class StreamManager {
     }
 
     this.isPlayingInterrupt = false;
+    // 無音は稼働したまま main loop に戻る（次トラック再生時に停止される）
     console.log(`[StreamManager] Interrupt finished, played ${trackNumber - 1}/${totalTracks} tracks, resuming playlist`);
   }
 
@@ -538,6 +554,7 @@ export class StreamManager {
   }
 
   private async playLocalTrack(track: TrackInfo): Promise<void> {
+    this.stopSilence(); // 準備完了、無音→トラック再生に移行
     this.abortController = new AbortController();
     const { signal } = this.abortController;
 
@@ -619,6 +636,24 @@ export class StreamManager {
     });
   }
 
+
+  /** 無音フレームの定期送信を開始（トラック間ギャップを埋める） */
+  private startSilence(): void {
+    if (this.silenceInterval) return;
+    this.silenceInterval = setInterval(() => {
+      if (this.clients.size > 0) {
+        this.broadcast(StreamManager.SILENCE_FRAME);
+      }
+    }, 26); // 26ms ≈ 1フレーム（128kbps/44.1kHz）
+  }
+
+  /** 無音フレームの送信を停止（トラック再生に移行） */
+  private stopSilence(): void {
+    if (this.silenceInterval) {
+      clearInterval(this.silenceInterval);
+      this.silenceInterval = null;
+    }
+  }
 
   private broadcast(chunk: Buffer): void {
     for (const client of this.clients) {

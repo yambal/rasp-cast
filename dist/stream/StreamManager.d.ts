@@ -19,6 +19,10 @@ export declare class StreamManager {
     private abortController;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     private targetBitrate;
+    /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
+    private static readonly SILENCE_FRAME;
+    /** 無音ストリーム制御用 */
+    private silenceInterval;
     /** 割り込み再生用 */
     private interruptTracks;
     private isPlayingInterrupt;
@@ -96,5 +100,9 @@ export declare class StreamManager {
     private playTrack;
     private playLocalTrack;
     private streamWithRateControl;
+    /** 無音フレームの定期送信を開始（トラック間ギャップを埋める） */
+    private startSilence;
+    /** 無音フレームの送信を停止（トラック再生に移行） */
+    private stopSilence;
     private broadcast;
 }
