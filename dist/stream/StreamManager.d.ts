@@ -19,8 +19,8 @@ export declare class StreamManager {
     private abortController;
     /** MP3 ビットレート (kbps) に応じた送信レート制御 */
     private targetBitrate;
-    /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
-    private static readonly SILENCE_FRAME;
+    /** 正規エンコード済み無音 MP3 フレーム（assets/silence.mp3 から読み込み） */
+    private silenceFrame;
     /** 無音ストリーム制御用 */
     private silenceInterval;
     /** 割り込み再生用 */
@@ -29,6 +29,8 @@ export declare class StreamManager {
     /** キャッシュディレクトリ */
     private cacheDir;
     constructor(musicDir: string, cacheDir: string);
+    /** assets/silence.mp3 から最初の MP3 フレームを抽出 */
+    private loadSilenceFrame;
     /** URLトラックをキャッシュディレクトリにダウンロード */
     downloadToCache(url: string, id: string): Promise<string>;
     /** キャッシュファイルを削除 */

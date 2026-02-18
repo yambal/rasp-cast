@@ -54,15 +54,8 @@ export class StreamManager {
   private abortController: AbortController | null = null;
   /** MP3 ビットレート (kbps) に応じた送信レート制御 */
   private targetBitrate = 128; // kbps
-  /** 無音 MP3 フレーム: MPEG1 Layer3 128kbps 44.1kHz ステレオ (417 bytes/frame ≈ 26ms) */
-  private static readonly SILENCE_FRAME = (() => {
-    const frame = Buffer.alloc(417, 0);
-    frame[0] = 0xFF; // Sync
-    frame[1] = 0xFB; // MPEG1, Layer3, no CRC
-    frame[2] = 0x90; // 128kbps, 44100Hz
-    frame[3] = 0x00; // Stereo
-    return frame;
-  })();
+  /** 正規エンコード済み無音 MP3 フレーム（assets/silence.mp3 から読み込み） */
+  private silenceFrame: Buffer = Buffer.alloc(0);
   /** 無音ストリーム制御用 */
   private silenceInterval: ReturnType<typeof setInterval> | null = null;
   /** 割り込み再生用 */
@@ -76,6 +69,31 @@ export class StreamManager {
     this.cacheDir = cacheDir;
     if (!fs.existsSync(this.cacheDir)) {
       fs.mkdirSync(this.cacheDir, { recursive: true });
+    }
+    this.loadSilenceFrame();
+  }
+
+  /** assets/silence.mp3 から最初の MP3 フレームを抽出 */
+  private loadSilenceFrame(): void {
+    const silencePath = path.join(this.musicDir, '..', 'assets', 'silence.mp3');
+    try {
+      const data = fs.readFileSync(silencePath);
+      // 最初の sync word (0xFFFB) を探してフレームを抽出
+      for (let i = 0; i < data.length - 4; i++) {
+        if (data[i] === 0xFF && (data[i + 1] & 0xE0) === 0xE0) {
+          // フレームサイズを計算（MPEG1 Layer3 128kbps 44100Hz）
+          const padding = (data[i + 2] & 0x02) >> 1;
+          const frameSize = 417 + padding;
+          if (i + frameSize <= data.length) {
+            this.silenceFrame = data.subarray(i, i + frameSize);
+            console.log(`[StreamManager] Loaded silence frame: ${frameSize} bytes from ${silencePath}`);
+            return;
+          }
+        }
+      }
+      console.error('[StreamManager] No valid MP3 frame found in silence.mp3');
+    } catch (err: any) {
+      console.error(`[StreamManager] Failed to load silence.mp3: ${err.message}`);
     }
   }
 
@@ -564,6 +582,7 @@ export class StreamManager {
 
       const onAbort = () => {
         stream.destroy();
+        this.startSilence(); // abort時即座に無音開始（レート制御待機中のギャップを埋める）
         resolve();
       };
       signal.addEventListener('abort', onAbort, { once: true });
@@ -640,11 +659,11 @@ export class StreamManager {
 
   /** 無音フレームの定期送信を開始（トラック間ギャップを埋める） */
   private startSilence(): void {
-    if (this.silenceInterval) return;
+    if (this.silenceInterval || this.silenceFrame.length === 0) return;
     console.log('[StreamManager] 🔇 Silence stream started');
     this.silenceInterval = setInterval(() => {
       if (this.clients.size > 0) {
-        this.broadcast(StreamManager.SILENCE_FRAME);
+        this.broadcast(this.silenceFrame);
       }
     }, 26); // 26ms ≈ 1フレーム（128kbps/44.1kHz）
   }
