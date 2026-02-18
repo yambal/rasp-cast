@@ -66,6 +66,7 @@ export class StreamManager {
                 '-ar', '44100',
                 '-ab', '128k',
                 '-ac', '2',
+                '-f', 'mp3',
                 '-y',
                 tempPath,
             ]);
@@ -104,6 +105,7 @@ export class StreamManager {
                 '-ar', '44100',
                 '-ab', '128k',
                 '-ac', '2',
+                '-f', 'mp3',
                 '-y',
                 tempPath,
             ]);
