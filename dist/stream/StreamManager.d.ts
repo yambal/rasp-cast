@@ -31,6 +31,11 @@ export declare class StreamManager {
     constructor(musicDir: string, cacheDir: string);
     /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
     downloadToCache(url: string, id: string): Promise<string>;
+    /**
+     * ローカルMP3ファイルをffmpegで正規化してキャッシュ
+     * ファイルパス+mtime+sizeからハッシュを生成し、変更時のみ再変換する
+     */
+    private normalizeFile;
     /** キャッシュファイルを削除 */
     deleteCacheFile(id: string): void;
     loadPlaylist(playlistPath: string): Promise<number>;

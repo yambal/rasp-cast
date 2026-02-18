@@ -82,6 +82,44 @@ export class StreamManager {
         console.log(`[StreamManager] Downloaded: ${id} (${(size / 1024).toFixed(0)} KB)`);
         return cachePath;
     }
+    /**
+     * ローカルMP3ファイルをffmpegで正規化してキャッシュ
+     * ファイルパス+mtime+sizeからハッシュを生成し、変更時のみ再変換する
+     */
+    async normalizeFile(sourcePath) {
+        const stat = fs.statSync(sourcePath);
+        const key = `${sourcePath}|${stat.mtimeMs}|${stat.size}`;
+        const hash = crypto.createHash('md5').update(key).digest('hex').slice(0, 12);
+        const basename = path.basename(sourcePath, '.mp3');
+        const cacheName = `file_${basename}_${hash}.mp3`;
+        const cachePath = path.join(this.cacheDir, cacheName);
+        if (fs.existsSync(cachePath)) {
+            return cachePath;
+        }
+        console.log(`[StreamManager] Normalizing file: ${path.basename(sourcePath)}`);
+        const tempPath = cachePath + '.tmp';
+        try {
+            await execFileAsync('ffmpeg', [
+                '-i', sourcePath,
+                '-ar', '44100',
+                '-ab', '128k',
+                '-ac', '2',
+                '-y',
+                tempPath,
+            ]);
+            fs.renameSync(tempPath, cachePath);
+            const size = fs.statSync(cachePath).size;
+            console.log(`[StreamManager] Normalized: ${path.basename(sourcePath)} → ${cacheName} (${(size / 1024).toFixed(0)} KB)`);
+            return cachePath;
+        }
+        catch (err) {
+            console.warn(`[StreamManager] ffmpeg normalization failed for ${path.basename(sourcePath)}: ${err.message}, using original`);
+            // 一時ファイル削除
+            if (fs.existsSync(tempPath))
+                fs.unlinkSync(tempPath);
+            return sourcePath;
+        }
+    }
     /** キャッシュファイルを削除 */
     deleteCacheFile(id) {
         const cachePath = path.join(this.cacheDir, `${id}.mp3`);
@@ -169,7 +207,8 @@ export class StreamManager {
                     // ID3 読取失敗時はフォールバック値を使用
                 }
             }
-            return { id: entry.id || crypto.randomUUID(), type: 'file', filePath, filename, title, artist };
+            const normalizedPath = await this.normalizeFile(filePath);
+            return { id: entry.id || crypto.randomUUID(), type: 'file', filePath: normalizedPath, originalPath: filePath, filename, title, artist };
         }
         if (entry.type === 'url' && entry.url) {
             const id = entry.id || crypto.randomUUID();
@@ -206,7 +245,8 @@ export class StreamManager {
             catch {
                 // ID3 読取失敗時はファイル名をフォールバック
             }
-            this.tracks.push({ id: crypto.randomUUID(), type: 'file', filePath, title, artist, filename: file });
+            const normalizedPath = await this.normalizeFile(filePath);
+            this.tracks.push({ id: crypto.randomUUID(), type: 'file', filePath: normalizedPath, originalPath: filePath, title, artist, filename: file });
         }
         console.log(`[StreamManager] Scanned ${this.tracks.length} tracks from directory`);
         return this.tracks.length;
@@ -382,6 +422,9 @@ export class StreamManager {
         const orphaned = [];
         let freedBytes = 0;
         for (const file of cacheFiles) {
+            // file_ プレフィックスはローカルファイル正規化キャッシュ（ハッシュベース管理）
+            if (file.startsWith('file_'))
+                continue;
             const id = path.basename(file, '.mp3');
             if (!validIds.has(id)) {
                 const filePath = path.join(this.cacheDir, file);
@@ -416,8 +459,9 @@ export class StreamManager {
             shuffle: this.shuffle,
             tracks: this.tracks.map((t) => {
                 if (t.type === 'file') {
-                    const rel = t.filePath
-                        ? path.relative(path.join(this.musicDir, '..'), t.filePath).replace(/\\/g, '/')
+                    const origPath = t.originalPath || t.filePath;
+                    const rel = origPath
+                        ? path.relative(path.join(this.musicDir, '..'), origPath).replace(/\\/g, '/')
                         : undefined;
                     return { id: t.id, type: 'file', path: rel, title: t.title, artist: t.artist };
                 }
