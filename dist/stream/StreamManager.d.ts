@@ -24,10 +24,12 @@ export declare class StreamManager {
     /** 割り込み再生用 */
     private interruptTracks;
     private isPlayingInterrupt;
+    /** シャッフル再生 */
+    private shuffle;
     /** キャッシュディレクトリ */
     private cacheDir;
     constructor(musicDir: string, cacheDir: string);
-    /** URLトラックをキャッシュディレクトリにダウンロード */
+    /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
     downloadToCache(url: string, id: string): Promise<string>;
     /** キャッシュファイルを削除 */
     deleteCacheFile(id: string): void;
@@ -35,6 +37,8 @@ export declare class StreamManager {
     private loadFromPlaylistFile;
     private buildTrackInfo;
     private scanMusicDir;
+    /** Fisher-Yates シャッフル */
+    private shuffleTracks;
     addClient(res: Response, wantsMetadata: boolean): void;
     startStreaming(): Promise<void>;
     /** 割り込み再生を要求する。現在の曲が自然終了した後、指定トラックを順次再生しプレイリストに復帰 */
@@ -86,8 +90,11 @@ export declare class StreamManager {
         deletedCount: number;
         freedBytes: number;
     };
-    getPlaylist(): PlaylistFileTrack[];
-    setPlaylist(tracks: PlaylistFileTrack[]): Promise<number>;
+    getPlaylist(): {
+        shuffle: boolean;
+        tracks: PlaylistFileTrack[];
+    };
+    setPlaylist(tracks: PlaylistFileTrack[], shuffle?: boolean): Promise<number>;
     addTrack(track: PlaylistFileTrack): Promise<{
         id: string;
         trackCount: number;

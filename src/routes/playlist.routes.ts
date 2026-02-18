@@ -9,21 +9,22 @@ export function createPlaylistRoutes(streamManager: StreamManager): Router {
    * GET /playlist — 現在のプレイリスト取得
    */
   router.get('/playlist', requireApiKey, (_req, res) => {
-    res.json({ tracks: streamManager.getPlaylist() });
+    const { shuffle, tracks } = streamManager.getPlaylist();
+    res.json({ shuffle, tracks });
   });
 
   /**
    * PUT /playlist — プレイリスト全体を置換
-   * Body: { tracks: PlaylistFileTrack[] }
+   * Body: { shuffle?: boolean, tracks: PlaylistFileTrack[] }
    */
   router.put('/playlist', requireApiKey, async (req, res) => {
     try {
-      const { tracks } = req.body;
+      const { shuffle, tracks } = req.body;
       if (!Array.isArray(tracks)) {
         res.status(400).json({ error: 'tracks must be an array' });
         return;
       }
-      const count = await streamManager.setPlaylist(tracks);
+      const count = await streamManager.setPlaylist(tracks, shuffle);
       res.json({ ok: true, trackCount: count });
     } catch (err: any) {
       res.status(500).json({ error: err.message });

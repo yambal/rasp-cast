@@ -4,11 +4,14 @@ import crypto from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createRequire } from 'node:module';
 import { parseFile } from 'music-metadata';
 import { IcyInterleaver } from './IcyMetadata.js';
 const require = createRequire(import.meta.url);
 const { version } = require('../../package.json');
+const execFileAsync = promisify(execFile);
 export class StreamManager {
     clients = new Set();
     tracks = [];
@@ -25,6 +28,8 @@ export class StreamManager {
     /** 割り込み再生用 */
     interruptTracks = [];
     isPlayingInterrupt = false;
+    /** シャッフル再生 */
+    shuffle = false;
     /** キャッシュディレクトリ */
     cacheDir;
     constructor(musicDir, cacheDir) {
@@ -34,7 +39,7 @@ export class StreamManager {
             fs.mkdirSync(this.cacheDir, { recursive: true });
         }
     }
-    /** URLトラックをキャッシュディレクトリにダウンロード */
+    /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
     async downloadToCache(url, id) {
         const cachePath = path.join(this.cacheDir, `${id}.mp3`);
         if (fs.existsSync(cachePath)) {
@@ -42,6 +47,7 @@ export class StreamManager {
             return cachePath;
         }
         console.log(`[StreamManager] Downloading: "${id}" from ${url}`);
+        const rawPath = cachePath + '.tmp.raw';
         const tempPath = cachePath + '.tmp';
         const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
         if (!response.ok) {
@@ -51,9 +57,27 @@ export class StreamManager {
             throw new Error(`No response body for ${url}`);
         }
         const nodeStream = Readable.fromWeb(response.body);
-        const writeStream = fs.createWriteStream(tempPath);
+        const writeStream = fs.createWriteStream(rawPath);
         await pipeline(nodeStream, writeStream);
+        // ffmpegで正規化 (128kbps, 44.1kHz, stereo)
+        try {
+            await execFileAsync('ffmpeg', [
+                '-i', rawPath,
+                '-ar', '44100',
+                '-ab', '128k',
+                '-ac', '2',
+                '-y',
+                tempPath,
+            ]);
+            console.log(`[StreamManager] Normalized: ${id} (128kbps/44.1kHz)`);
+        }
+        catch (err) {
+            console.warn(`[StreamManager] ffmpeg normalization failed: ${err.message}, using raw file`);
+            fs.renameSync(rawPath, tempPath);
+        }
         fs.renameSync(tempPath, cachePath);
+        if (fs.existsSync(rawPath))
+            fs.unlinkSync(rawPath);
         const size = fs.statSync(cachePath).size;
         console.log(`[StreamManager] Downloaded: ${id} (${(size / 1024).toFixed(0)} KB)`);
         return cachePath;
@@ -88,6 +112,7 @@ export class StreamManager {
         return this.scanMusicDir();
     }
     async loadFromPlaylistFile(playlist) {
+        this.shuffle = playlist.shuffle ?? false;
         let needsSave = false;
         this.tracks = [];
         for (const entry of playlist.tracks) {
@@ -186,6 +211,14 @@ export class StreamManager {
         console.log(`[StreamManager] Scanned ${this.tracks.length} tracks from directory`);
         return this.tracks.length;
     }
+    /** Fisher-Yates シャッフル */
+    shuffleTracks() {
+        for (let i = this.tracks.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.tracks[i], this.tracks[j]] = [this.tracks[j], this.tracks[i]];
+        }
+        console.log('[StreamManager] Playlist shuffled');
+    }
     addClient(res, wantsMetadata) {
         const client = {
             res,
@@ -242,6 +275,9 @@ export class StreamManager {
             }
             lastTrackEndTime = Date.now();
             this.currentIndex = (this.currentIndex + 1) % this.tracks.length;
+            if (this.currentIndex === 0 && this.shuffle) {
+                this.shuffleTracks();
+            }
             // 割り込みトラックが待機中なら次のループ先頭で検出・再生される
         }
         this.stopSilence();
@@ -376,40 +412,42 @@ export class StreamManager {
         return { tracks, orphaned, deletedCount: orphaned.length, freedBytes };
     }
     getPlaylist() {
-        return this.tracks.map((t) => {
-            if (t.type === 'file') {
-                const rel = t.filePath
-                    ? path.relative(path.join(this.musicDir, '..'), t.filePath).replace(/\\/g, '/')
-                    : undefined;
-                return { id: t.id, type: 'file', path: rel, title: t.title, artist: t.artist };
-            }
-            return { id: t.id, type: 'url', url: t.url, title: t.title, artist: t.artist, cached: t.cached };
-        });
+        return {
+            shuffle: this.shuffle,
+            tracks: this.tracks.map((t) => {
+                if (t.type === 'file') {
+                    const rel = t.filePath
+                        ? path.relative(path.join(this.musicDir, '..'), t.filePath).replace(/\\/g, '/')
+                        : undefined;
+                    return { id: t.id, type: 'file', path: rel, title: t.title, artist: t.artist };
+                }
+                return { id: t.id, type: 'url', url: t.url, title: t.title, artist: t.artist, cached: t.cached };
+            }),
+        };
     }
-    async setPlaylist(tracks) {
+    async setPlaylist(tracks, shuffle) {
         // IDが無いトラックにはIDを付与
         for (const track of tracks) {
             if (!track.id) {
                 track.id = crypto.randomUUID();
             }
         }
-        const playlist = { tracks };
+        const playlist = { shuffle: shuffle ?? this.shuffle, tracks };
         // loadFromPlaylistFile 内でURLキャッシュ・TrackInfo構築を一括実行
         await this.loadFromPlaylistFile(playlist);
         this.adjustCurrentIndex();
-        console.log(`[StreamManager] Playlist updated: ${this.tracks.length} tracks`);
+        console.log(`[StreamManager] Playlist updated: ${this.tracks.length} tracks (shuffle=${this.shuffle})`);
         return this.tracks.length;
     }
     async addTrack(track) {
-        const current = this.getPlaylist();
+        const { tracks: current } = this.getPlaylist();
         const id = track.id || crypto.randomUUID();
         current.push({ ...track, id });
-        // setPlaylist → loadFromPlaylistFile でURLキャッシュ実行
         const trackCount = await this.setPlaylist(current);
         return { id, trackCount };
     }
     async removeTrack(id) {
-        const current = this.getPlaylist();
+        const { tracks: current } = this.getPlaylist();
         const index = current.findIndex((t) => t.id === id);
         if (index === -1) {
             throw new Error(`Track not found: ${id}`);
