@@ -104,6 +104,11 @@ export class ScheduleManager {
       throw new Error(`Invalid cron expression: ${input.cron}`);
     }
 
+    // トラックにIDが無い場合、自動付与
+    for (const t of input.tracks) {
+      if (!t.id) t.id = crypto.randomUUID();
+    }
+
     // 同じ cron 式の既存番組があれば上書き
     const existingIndex = this.programs.findIndex((p) => p.cron === input.cron);
     if (existingIndex !== -1) {
@@ -153,8 +158,11 @@ export class ScheduleManager {
       throw new Error(`Invalid cron expression: ${input.cron}`);
     }
 
-    // tracksが変更される場合、旧キャッシュ削除 → 新キャッシュダウンロード
+    // tracksが変更される場合、ID付与 → 旧キャッシュ削除 → 新キャッシュダウンロード
     if (input.tracks) {
+      for (const t of input.tracks) {
+        if (!t.id) t.id = crypto.randomUUID();
+      }
       this.deleteCacheForTracks(this.programs[index].tracks);
       await this.cacheUrlTracks(input.tracks);
     }
@@ -173,12 +181,14 @@ export class ScheduleManager {
     const index = this.programs.findIndex((p) => p.id === id);
     if (index === -1) throw new Error(`Program not found: ${id}`);
 
+    const program = this.programs[index];
     // URLトラックのキャッシュを即時削除
-    this.deleteCacheForTracks(this.programs[index].tracks);
+    this.deleteCacheForTracks(program.tracks);
 
     this.programs.splice(index, 1);
     this.save();
     this.unregisterJob(id);
+    console.log(`[ScheduleManager] Deleted program "${program.name}" (${program.cron})`);
   }
 
   stopAll(): void {
