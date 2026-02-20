@@ -80,6 +80,10 @@ export class StreamManager {
   private cacheDir: string;
   /** バックグラウンドダウンロード追跡 */
   private pendingDownloads = new Map<string, Promise<string | null>>();
+  /** ダウンロードキュー（同時実行数制限） */
+  private static readonly MAX_CONCURRENT_DOWNLOADS = 1;
+  private activeDownloads = 0;
+  private downloadQueue: Array<{ url: string; id: string; onComplete?: (success: boolean) => void }> = [];
 
   constructor(musicDir: string, cacheDir: string) {
     this.musicDir = musicDir;
@@ -201,33 +205,62 @@ export class StreamManager {
   }
 
   /**
-   * バックグラウンドでキャッシュダウンロードを開始（即座にreturn）。
+   * バックグラウンドでキャッシュダウンロードをキューに追加（即座にreturn）。
+   * 同時実行数は MAX_CONCURRENT_DOWNLOADS に制限される。
    * 完了時に onComplete コールバックを呼ぶ。
    */
   startBackgroundDownload(url: string, id: string, onComplete?: (success: boolean) => void): void {
-    // キャッシュ済み or DL中 → 何もしない
+    // キャッシュ済み or DL中/キュー中 → 何もしない
     if (this.isCached(id) || this.pendingDownloads.has(id)) return;
 
-    const job = this.downloadToCache(url, id)
-      .then((resultPath) => {
-        onComplete?.(true);
-        return resultPath;
-      })
-      .catch((err) => {
-        console.error(`[StreamManager] Background cache failed for ${id}: ${err.message}`);
-        onComplete?.(false);
-        return null;
-      })
-      .finally(() => {
-        this.pendingDownloads.delete(id);
-      });
+    // プレースホルダーを登録（重複防止）
+    this.pendingDownloads.set(id, new Promise(() => {}));
 
-    this.pendingDownloads.set(id, job);
+    this.downloadQueue.push({ url, id, onComplete });
+    console.log(`[StreamManager] 📥 Queued: ${id} (queue: ${this.downloadQueue.length}, active: ${this.activeDownloads})`);
+    this.processDownloadQueue();
   }
 
-  /** 進行中のバックグラウンドDL ID一覧 */
+  /** キューから次のダウンロードを実行（同時実行数制限） */
+  private processDownloadQueue(): void {
+    while (this.activeDownloads < StreamManager.MAX_CONCURRENT_DOWNLOADS && this.downloadQueue.length > 0) {
+      const { url, id, onComplete } = this.downloadQueue.shift()!;
+
+      // キューで待っている間にキャッシュされた or キャンセルされた場合スキップ
+      if (this.isCached(id) || !this.pendingDownloads.has(id)) {
+        this.pendingDownloads.delete(id);
+        onComplete?.(this.isCached(id));
+        continue;
+      }
+
+      this.activeDownloads++;
+      this.downloadToCache(url, id)
+        .then((resultPath) => {
+          onComplete?.(true);
+          return resultPath;
+        })
+        .catch((err) => {
+          console.error(`[StreamManager] Background cache failed for ${id}: ${err.message}`);
+          onComplete?.(false);
+          return null;
+        })
+        .finally(() => {
+          this.activeDownloads--;
+          this.pendingDownloads.delete(id);
+          this.processDownloadQueue();
+        });
+    }
+  }
+
+  /** 進行中 + キュー中のバックグラウンドDL ID一覧 */
   getPendingDownloads(): string[] {
     return Array.from(this.pendingDownloads.keys());
+  }
+
+  /** キャンセル: 指定IDのキュー中タスクを除去（実行中は止められない） */
+  cancelPendingDownload(id: string): void {
+    this.downloadQueue = this.downloadQueue.filter(item => item.id !== id);
+    this.pendingDownloads.delete(id);
   }
 
   /**

@@ -255,10 +255,11 @@ export class ScheduleManager {
     return changed;
   }
 
-  /** URLトラックのキャッシュを削除 & cached フラグ更新 */
+  /** URLトラックのキャッシュを削除 & キュー中DLキャンセル & cached フラグ更新 */
   private deleteCacheForTracks(tracks: PlaylistFileTrack[]): void {
     for (const track of tracks) {
       if (track.type === 'url' && track.id) {
+        this.streamManager.cancelPendingDownload(track.id);
         this.streamManager.deleteCacheFile(track.id);
         track.cached = false;
       }
