@@ -307,15 +307,7 @@ export class StreamManager {
         if (this.shuffle && this.tracks.length > 1) {
             this.shuffleTracks();
         }
-        // バックグラウンドDL完了後にプレイリストを再構築（新たにキャッシュされたトラックを追加）
-        if (this.pendingDownloads.size > 0) {
-            Promise.allSettled([...this.pendingDownloads.values()]).then(() => {
-                console.log('[StreamManager] Background downloads complete, reloading playlist');
-                this.loadFromPlaylistFile(playlist).catch((err) => {
-                    console.error('[StreamManager] Failed to reload playlist after background cache:', err.message);
-                });
-            });
-        }
+        // バックグラウンドDL完了後のプレイリスト再読込は onQueueEmpty コールバックで行う
     }
     async buildTrackInfo(entry) {
         if (entry.type === 'file' && entry.path) {

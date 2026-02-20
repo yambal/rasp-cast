@@ -30,8 +30,11 @@ async function main() {
 
   await scheduleManager.load();
 
-  // キャッシュキュー全完了時に孤立ファイルを自動クリーンアップ
-  streamManager.onQueueEmpty = () => {
+  // キャッシュキュー全完了時にプレイリスト再読込＋孤立ファイル自動クリーンアップ
+  streamManager.onQueueEmpty = async () => {
+    // 新たにキャッシュされたトラックを this.tracks に反映
+    await streamManager.loadPlaylist(PLAYLIST_PATH);
+
     const scheduleTrackIds = new Set<string>();
     for (const program of scheduleManager.getPrograms()) {
       for (const track of program.tracks) {
