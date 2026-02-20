@@ -113,7 +113,7 @@ export class StreamManager {
             console.log(`[StreamManager] Cache hit: ${id} (${url})`);
             return cachePath;
         }
-        console.log(`[StreamManager] Downloading: "${id}" from ${url}`);
+        console.log(`[StreamManager] ⬇️  Downloading: ${id} from ${url}`);
         const rawPath = cachePath + '.tmp.raw';
         const tempPath = cachePath + '.tmp';
         const response = await fetch(url, { signal: AbortSignal.timeout(30_000) });
@@ -126,19 +126,23 @@ export class StreamManager {
         const nodeStream = Readable.fromWeb(response.body);
         const writeStream = fs.createWriteStream(rawPath);
         await pipeline(nodeStream, writeStream);
-        // ffmpegで正規化 (128kbps, 44.1kHz, stereo)
+        const rawSize = fs.statSync(rawPath).size;
+        console.log(`[StreamManager] ⬇️  Downloaded: ${id} (${(rawSize / 1024).toFixed(0)} KB)`);
+        // ffmpegで正規化 (128kbps, 44.1kHz, stereo, 2-pass loudnorm)
+        console.log(`[StreamManager] 🔧 Normalizing: ${id}`);
         const ok = await this.transcodeWithFfmpeg(rawPath, tempPath);
         if (ok) {
-            console.log(`[StreamManager] Normalized: ${id} (128kbps/44.1kHz)`);
+            const normSize = fs.statSync(tempPath).size;
+            console.log(`[StreamManager] 🔧 Normalized: ${id} (128kbps/44.1kHz, ${(normSize / 1024).toFixed(0)} KB)`);
         }
         else {
+            console.warn(`[StreamManager] 🔧 Normalize failed, using original: ${id}`);
             fs.renameSync(rawPath, tempPath);
         }
         fs.renameSync(tempPath, cachePath);
         if (fs.existsSync(rawPath))
             fs.unlinkSync(rawPath);
-        const size = fs.statSync(cachePath).size;
-        console.log(`[StreamManager] Downloaded: ${id} (${(size / 1024).toFixed(0)} KB)`);
+        console.log(`[StreamManager] ✅ Cached: ${id}`);
         return cachePath;
     }
     /** キャッシュ存在チェック */
@@ -204,7 +208,7 @@ export class StreamManager {
         const cachePath = path.join(this.cacheDir, `${id}.mp3`);
         if (fs.existsSync(cachePath)) {
             fs.unlinkSync(cachePath);
-            console.log(`[StreamManager] Cache deleted: ${id}`);
+            console.log(`[StreamManager] 🗑️ Cache deleted: ${id}`);
         }
     }
     async loadPlaylist(playlistPath) {
@@ -620,7 +624,6 @@ export class StreamManager {
     async playTrack(track) {
         this.currentTrack = track;
         const displayTitle = this.getCurrentTitle();
-        console.log(`[StreamManager] Now playing: ${displayTitle}`);
         // 全クライアントのメタデータを更新
         for (const client of this.clients) {
             if (client.icyInterleaver) {
@@ -644,7 +647,7 @@ export class StreamManager {
                 resolve();
             };
             signal.addEventListener('abort', onAbort, { once: true });
-            this.streamWithRateControl(stream, signal, resolve, track.title || track.filename || 'unknown');
+            this.streamWithRateControl(stream, signal, resolve, this.getCurrentTitle() || track.title || track.filename || 'unknown');
         });
     }
     streamWithRateControl(stream, signal, resolve, label) {
@@ -669,7 +672,7 @@ export class StreamManager {
             // 初回チャンクは即時送信（トラック間ギャップを最小化）
             // 2回目以降はレート制御に従い待機
             if (isFirstBroadcast) {
-                console.log(`[StreamManager] ▶ Track ready: "${label}"`);
+                console.log(`[StreamManager] 🎵 Now playing: ${label}`);
                 isFirstBroadcast = false;
             }
             else if (delay > 0) {
