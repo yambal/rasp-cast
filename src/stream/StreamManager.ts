@@ -84,6 +84,8 @@ export class StreamManager {
   private static readonly MAX_CONCURRENT_DOWNLOADS = 1;
   private activeDownloads = 0;
   private downloadQueue: Array<{ url: string; id: string; onComplete?: (success: boolean) => void }> = [];
+  /** キュー全完了時コールバック */
+  onQueueEmpty?: () => void;
 
   constructor(musicDir: string, cacheDir: string) {
     this.musicDir = musicDir;
@@ -249,6 +251,7 @@ export class StreamManager {
           this.pendingDownloads.delete(id);
           if (this.activeDownloads === 0 && this.downloadQueue.length === 0) {
             console.log('[StreamManager] ✅ All caching complete');
+            this.onQueueEmpty?.();
           }
           this.processDownloadQueue();
         });

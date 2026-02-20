@@ -42,6 +42,8 @@ export declare class StreamManager {
     private static readonly MAX_CONCURRENT_DOWNLOADS;
     private activeDownloads;
     private downloadQueue;
+    /** キュー全完了時コールバック */
+    onQueueEmpty?: () => void;
     constructor(musicDir: string, cacheDir: string);
     /** ラウドネス測定値 (loudnorm 1st pass) */
     private static readonly LOUDNORM_TARGET;

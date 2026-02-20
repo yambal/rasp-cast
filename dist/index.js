@@ -24,6 +24,18 @@ async function main() {
         console.warn(`[rasp-cast] Server will start but streaming is paused until tracks are added.`);
     }
     await scheduleManager.load();
+    // キャッシュキュー全完了時に孤立ファイルを自動クリーンアップ
+    streamManager.onQueueEmpty = () => {
+        const scheduleTrackIds = new Set();
+        for (const program of scheduleManager.getPrograms()) {
+            for (const track of program.tracks) {
+                if (track.type === 'url' && track.id) {
+                    scheduleTrackIds.add(track.id);
+                }
+            }
+        }
+        streamManager.cleanupCache(scheduleTrackIds);
+    };
     app.use(express.json());
     app.use(createStreamRoutes(streamManager, scheduleManager));
     app.use(createPlaylistRoutes(streamManager));
