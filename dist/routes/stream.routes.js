@@ -1,6 +1,11 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Router } from 'express';
 import { ICY_METAINT } from '../stream/IcyMetadata.js';
 import { requireApiKey } from '../middleware/auth.js';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
 export function createStreamRoutes(streamManager, scheduleManager) {
     const router = Router();
@@ -37,7 +42,7 @@ export function createStreamRoutes(streamManager, scheduleManager) {
         const status = streamManager.getStatus();
         const pending = streamManager.getPendingDownloads();
         const streamUrl = process.env.PUBLIC_STREAM_URL || '';
-        res.json({ ...status, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length });
+        res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length });
     });
     /**
      * GET /cache - キャッシュ状態
