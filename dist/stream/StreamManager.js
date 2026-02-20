@@ -192,6 +192,9 @@ export class StreamManager {
                 .finally(() => {
                 this.activeDownloads--;
                 this.pendingDownloads.delete(id);
+                if (this.activeDownloads === 0 && this.downloadQueue.length === 0) {
+                    console.log('[StreamManager] ✅ All caching complete');
+                }
                 this.processDownloadQueue();
             });
         }
