@@ -85,6 +85,8 @@ export declare class StreamManager {
     private shuffleTracks;
     addClient(res: Response, wantsMetadata: boolean): void;
     startStreaming(): Promise<void>;
+    /** 割り込みキューをクリア（再生中のトラックは最後まで再生される） */
+    clearInterruptQueue(): number;
     /** 割り込み再生を要求する。現在の曲が自然終了した後、指定トラックを順次再生しプレイリストに復帰 */
     interrupt(trackInputs: PlaylistFileTrack | PlaylistFileTrack[]): Promise<void>;
     private playInterrupt;

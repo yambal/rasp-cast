@@ -186,6 +186,7 @@ export class ScheduleManager {
         }
         const task = cron.schedule(program.cron, () => {
             console.log(`[ScheduleManager] Triggering program: ${program.name}`);
+            this.streamManager.clearInterruptQueue();
             this.streamManager.interrupt(program.tracks).catch((err) => {
                 console.error(`[ScheduleManager] Interrupt failed for "${program.name}":`, err.message);
             });

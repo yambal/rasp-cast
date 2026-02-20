@@ -525,6 +525,16 @@ export class StreamManager {
 
   }
 
+  /** 割り込みキューをクリア（再生中のトラックは最後まで再生される） */
+  clearInterruptQueue(): number {
+    const cleared = this.interruptTracks.length;
+    this.interruptTracks = [];
+    if (cleared > 0) {
+      console.log(`[StreamManager] Interrupt queue cleared (${cleared} tracks removed)`);
+    }
+    return cleared;
+  }
+
   /** 割り込み再生を要求する。現在の曲が自然終了した後、指定トラックを順次再生しプレイリストに復帰 */
   async interrupt(trackInputs: PlaylistFileTrack | PlaylistFileTrack[]): Promise<void> {
     const inputs = Array.isArray(trackInputs) ? trackInputs : [trackInputs];
