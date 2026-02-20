@@ -35,8 +35,9 @@ export function createStreamRoutes(streamManager, scheduleManager) {
      */
     router.get('/status', (_req, res) => {
         const status = streamManager.getStatus();
+        const pending = streamManager.getPendingDownloads();
         const streamUrl = process.env.PUBLIC_STREAM_URL || '';
-        res.json({ ...status, streamUrl, stationName: STATION_NAME });
+        res.json({ ...status, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length });
     });
     /**
      * GET /cache - キャッシュ状態

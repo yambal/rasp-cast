@@ -90,7 +90,7 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 
 ```json
 {
-  "version": "0.4.1",
+  "version": "0.4.9",
   "isStreaming": true,
   "isPlayingInterrupt": false,
   "listeners": 2,
@@ -103,7 +103,9 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
   "totalTracks": 10,
   "currentIndex": 3,
   "stationName": "FM ETS2 JP",
-  "streamUrl": "http://your-server:8000/stream"
+  "streamUrl": "http://your-server:8000/stream",
+  "busy": true,
+  "pendingCaches": 2
 }
 ```
 
@@ -118,6 +120,8 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 | `currentIndex` | number | 現在の再生位置（0始まり） |
 | `stationName` | string | 局名（環境変数 `STATION_NAME`） |
 | `streamUrl` | string | 公開ストリーム URL（環境変数 `PUBLIC_STREAM_URL`、未設定時は空文字） |
+| `busy` | boolean | キャッシュ作成キューが残っているかどうか |
+| `pendingCaches` | number | キャッシュ作成待ちのトラック数（ダウンロード中 + キュー待ち） |
 
 ---
 
@@ -323,9 +327,15 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 ```json
 {
   "ok": true,
-  "trackCount": 2
+  "trackCount": 2,
+  "caching": 1
 }
 ```
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `trackCount` | number | プレイリストの総トラック数（キャッシュ済みのみ） |
+| `caching` | number | バックグラウンドでキャッシュ作成中のトラック数 |
 
 ### エラー（400）
 
@@ -367,7 +377,8 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 {
   "ok": true,
   "id": "550e8400-e29b-41d4-a716-446655440000",
-  "trackCount": 11
+  "trackCount": 11,
+  "caching": 1
 }
 ```
 
@@ -375,7 +386,8 @@ curl -H "Icy-MetaData: 1" http://localhost:3000/stream > /dev/null
 |---|---|---|
 | `ok` | boolean | 成功フラグ |
 | `id` | string | 追加されたトラックの UUID |
-| `trackCount` | number | 追加後の総トラック数 |
+| `trackCount` | number | 追加後の総トラック数（キャッシュ済みのみ） |
+| `caching` | number | バックグラウンドでキャッシュ作成中のトラック数 |
 
 ### エラー（400）
 
@@ -540,9 +552,15 @@ UUID を指定してトラックを削除します。
 ```json
 {
   "ok": true,
-  "program": { "id": "...", "name": "...", "cron": "...", "tracks": [...], "enabled": true }
+  "program": { "id": "...", "name": "...", "cron": "...", "tracks": [...], "enabled": true },
+  "caching": 3
 }
 ```
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `program` | object | 追加/上書きされた番組 |
+| `caching` | number | バックグラウンドでキャッシュ作成中のトラック数 |
 
 ### エラー（400）
 
@@ -578,9 +596,15 @@ UUID を指定してトラックを削除します。
 ```json
 {
   "ok": true,
-  "program": { "id": "...", "name": "...", "cron": "*/30 * * * *", "tracks": [...], "enabled": false }
+  "program": { "id": "...", "name": "...", "cron": "*/30 * * * *", "tracks": [...], "enabled": false },
+  "caching": 3
 }
 ```
+
+| フィールド | 型 | 説明 |
+|---|---|---|
+| `program` | object | 更新された番組 |
+| `caching` | number | バックグラウンドでキャッシュ作成中のトラック数 |
 
 ### エラー（404）
 

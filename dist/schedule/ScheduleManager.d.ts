@@ -29,6 +29,6 @@ export declare class ScheduleManager {
     private unregisterJob;
     /** URLトラックのキャッシュ確認 & バックグラウンドDL開始。変更があれば true を返す */
     private cacheUrlTracksBackground;
-    /** URLトラックのキャッシュを削除 & cached フラグ更新 */
+    /** URLトラックのキャッシュを削除 & キュー中DLキャンセル & cached フラグ更新 */
     private deleteCacheForTracks;
 }

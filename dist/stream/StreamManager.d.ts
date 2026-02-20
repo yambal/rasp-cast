@@ -38,6 +38,10 @@ export declare class StreamManager {
     private cacheDir;
     /** バックグラウンドダウンロード追跡 */
     private pendingDownloads;
+    /** ダウンロードキュー（同時実行数制限） */
+    private static readonly MAX_CONCURRENT_DOWNLOADS;
+    private activeDownloads;
+    private downloadQueue;
     constructor(musicDir: string, cacheDir: string);
     /** ラウドネス測定値 (loudnorm 1st pass) */
     private static readonly LOUDNORM_TARGET;
@@ -53,12 +57,17 @@ export declare class StreamManager {
     /** キャッシュ存在チェック */
     isCached(id: string): boolean;
     /**
-     * バックグラウンドでキャッシュダウンロードを開始（即座にreturn）。
+     * バックグラウンドでキャッシュダウンロードをキューに追加（即座にreturn）。
+     * 同時実行数は MAX_CONCURRENT_DOWNLOADS に制限される。
      * 完了時に onComplete コールバックを呼ぶ。
      */
     startBackgroundDownload(url: string, id: string, onComplete?: (success: boolean) => void): void;
-    /** 進行中のバックグラウンドDL ID一覧 */
+    /** キューから次のダウンロードを実行（同時実行数制限） */
+    private processDownloadQueue;
+    /** 進行中 + キュー中のバックグラウンドDL ID一覧 */
     getPendingDownloads(): string[];
+    /** キャンセル: 指定IDのキュー中タスクを除去（実行中は止められない） */
+    cancelPendingDownload(id: string): void;
     /**
      * ローカルMP3ファイルをffmpegで正規化してキャッシュ
      * ファイルパス+mtime+sizeからハッシュを生成し、変更時のみ再変換する
