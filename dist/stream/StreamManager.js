@@ -40,6 +40,8 @@ export class StreamManager {
     shuffle = false;
     /** キャッシュディレクトリ */
     cacheDir;
+    /** バックグラウンドダウンロード追跡 */
+    pendingDownloads = new Map();
     constructor(musicDir, cacheDir) {
         this.musicDir = musicDir;
         this.cacheDir = cacheDir;
@@ -139,6 +141,37 @@ export class StreamManager {
         console.log(`[StreamManager] Downloaded: ${id} (${(size / 1024).toFixed(0)} KB)`);
         return cachePath;
     }
+    /** キャッシュ存在チェック */
+    isCached(id) {
+        return fs.existsSync(path.join(this.cacheDir, `${id}.mp3`));
+    }
+    /**
+     * バックグラウンドでキャッシュダウンロードを開始（即座にreturn）。
+     * 完了時に onComplete コールバックを呼ぶ。
+     */
+    startBackgroundDownload(url, id, onComplete) {
+        // キャッシュ済み or DL中 → 何もしない
+        if (this.isCached(id) || this.pendingDownloads.has(id))
+            return;
+        const job = this.downloadToCache(url, id)
+            .then((resultPath) => {
+            onComplete?.(true);
+            return resultPath;
+        })
+            .catch((err) => {
+            console.error(`[StreamManager] Background cache failed for ${id}: ${err.message}`);
+            onComplete?.(false);
+            return null;
+        })
+            .finally(() => {
+            this.pendingDownloads.delete(id);
+        });
+        this.pendingDownloads.set(id, job);
+    }
+    /** 進行中のバックグラウンドDL ID一覧 */
+    getPendingDownloads() {
+        return Array.from(this.pendingDownloads.keys());
+    }
     /**
      * ローカルMP3ファイルをffmpegで正規化してキャッシュ
      * ファイルパス+mtime+sizeからハッシュを生成し、変更時のみ再変換する
@@ -206,23 +239,17 @@ export class StreamManager {
                     entry.id = crypto.randomUUID();
                     needsSave = true;
                 }
-                // URLトラックはキャッシュが無ければ自動ダウンロード
+                // URLトラックのキャッシュ確認（未キャッシュならバックグラウンドDL開始）
                 if (entry.type === 'url' && entry.url) {
-                    try {
-                        await this.downloadToCache(entry.url, entry.id);
-                    }
-                    catch (err) {
-                        console.error(`[StreamManager] ⚠️  Failed to cache "${entry.title}": ${err.message}`);
-                    }
-                    // cached フラグをファイルのエントリに反映
                     const cachePath = path.join(this.cacheDir, `${entry.id}.mp3`);
                     const wasCached = entry.cached;
                     entry.cached = fs.existsSync(cachePath);
                     if (wasCached !== entry.cached)
                         needsSave = true;
-                    // キャッシュが無いURLトラックはプレイリストに追加しない
+                    // キャッシュが無いURLトラックはバックグラウンドDLを開始し、再生対象外とする
                     if (!entry.cached) {
-                        console.warn(`[StreamManager] Excluding uncached track "${entry.title || entry.url}" from playlist`);
+                        this.startBackgroundDownload(entry.url, entry.id);
+                        console.warn(`[StreamManager] Excluding uncached track "${entry.title || entry.url}" (download started in background)`);
                         continue;
                     }
                 }
@@ -240,6 +267,15 @@ export class StreamManager {
         // shuffle有効時は読み込み直後もシャッフル
         if (this.shuffle && this.tracks.length > 1) {
             this.shuffleTracks();
+        }
+        // バックグラウンドDL完了後にプレイリストを再構築（新たにキャッシュされたトラックを追加）
+        if (this.pendingDownloads.size > 0) {
+            Promise.allSettled([...this.pendingDownloads.values()]).then(() => {
+                console.log('[StreamManager] Background downloads complete, reloading playlist');
+                this.loadFromPlaylistFile(playlist).catch((err) => {
+                    console.error('[StreamManager] Failed to reload playlist after background cache:', err.message);
+                });
+            });
         }
     }
     async buildTrackInfo(entry) {

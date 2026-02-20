@@ -66,10 +66,10 @@ export class ScheduleManager {
       this.programs = [];
     }
 
-    // 既存プログラムのURLトラックを事前ダウンロード & cached フラグ更新
+    // 既存プログラムのURLトラックのキャッシュ確認 & バックグラウンドDL開始
     let cacheUpdated = false;
     for (const program of this.programs) {
-      if (await this.cacheUrlTracks(program.tracks)) cacheUpdated = true;
+      if (this.cacheUrlTracksBackground(program.tracks)) cacheUpdated = true;
     }
     if (cacheUpdated) this.save();
 
@@ -122,8 +122,8 @@ export class ScheduleManager {
       };
       // 旧URLトラックのキャッシュを削除
       this.deleteCacheForTracks(existing.tracks);
-      // 新URLトラックを即時ダウンロード
-      await this.cacheUrlTracks(program.tracks);
+      // 新URLトラックのキャッシュ確認 & バックグラウンドDL開始
+      this.cacheUrlTracksBackground(program.tracks);
 
       this.programs[existingIndex] = program;
       this.save();
@@ -141,8 +141,8 @@ export class ScheduleManager {
       enabled: input.enabled !== undefined ? input.enabled : true,
     };
 
-    // URLトラックを即時ダウンロード
-    await this.cacheUrlTracks(program.tracks);
+    // URLトラックのキャッシュ確認 & バックグラウンドDL開始
+    this.cacheUrlTracksBackground(program.tracks);
 
     this.programs.push(program);
     this.save();
@@ -164,7 +164,7 @@ export class ScheduleManager {
         if (!t.id) t.id = crypto.randomUUID();
       }
       this.deleteCacheForTracks(this.programs[index].tracks);
-      await this.cacheUrlTracks(input.tracks);
+      this.cacheUrlTracksBackground(input.tracks);
     }
 
     const program = { ...this.programs[index], ...input };
@@ -235,17 +235,20 @@ export class ScheduleManager {
     }
   }
 
-  /** URLトラックを事前ダウンロード & cached フラグ更新。変更があれば true を返す */
-  private async cacheUrlTracks(tracks: PlaylistFileTrack[]): Promise<boolean> {
+  /** URLトラックのキャッシュ確認 & バックグラウンドDL開始。変更があれば true を返す */
+  private cacheUrlTracksBackground(tracks: PlaylistFileTrack[]): boolean {
     let changed = false;
     for (const track of tracks) {
       if (track.type === 'url' && track.url && track.id) {
-        try {
-          await this.streamManager.downloadToCache(track.url, track.id);
+        const cached = this.streamManager.isCached(track.id);
+        if (!cached) {
+          this.streamManager.startBackgroundDownload(track.url, track.id, (success) => {
+            track.cached = success;
+            this.save();
+          });
+          if (track.cached !== false) { track.cached = false; changed = true; }
+        } else {
           if (!track.cached) { track.cached = true; changed = true; }
-        } catch (err: any) {
-          console.error(`[ScheduleManager] ⚠️  Failed to cache "${track.title}": ${err.message}`);
-          if (track.cached) { track.cached = false; changed = true; }
         }
       }
     }

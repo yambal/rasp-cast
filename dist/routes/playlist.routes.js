@@ -21,7 +21,8 @@ export function createPlaylistRoutes(streamManager) {
                 return;
             }
             const count = await streamManager.setPlaylist(tracks, shuffle);
-            res.json({ ok: true, trackCount: count });
+            const pending = streamManager.getPendingDownloads();
+            res.json({ ok: true, trackCount: count, caching: pending.length });
         }
         catch (err) {
             res.status(500).json({ error: err.message });
@@ -39,7 +40,8 @@ export function createPlaylistRoutes(streamManager) {
                 return;
             }
             const { id, trackCount } = await streamManager.addTrack(track);
-            res.json({ ok: true, id, trackCount });
+            const pending = streamManager.getPendingDownloads();
+            res.json({ ok: true, id, trackCount, caching: pending.length });
         }
         catch (err) {
             res.status(500).json({ error: err.message });

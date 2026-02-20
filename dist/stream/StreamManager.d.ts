@@ -36,6 +36,8 @@ export declare class StreamManager {
     private shuffle;
     /** キャッシュディレクトリ */
     private cacheDir;
+    /** バックグラウンドダウンロード追跡 */
+    private pendingDownloads;
     constructor(musicDir: string, cacheDir: string);
     /** ラウドネス測定値 (loudnorm 1st pass) */
     private static readonly LOUDNORM_TARGET;
@@ -48,6 +50,15 @@ export declare class StreamManager {
     private measureLoudness;
     /** URLトラックをキャッシュディレクトリにダウンロード（ffmpegで128kbps/44.1kHzに正規化） */
     downloadToCache(url: string, id: string): Promise<string>;
+    /** キャッシュ存在チェック */
+    isCached(id: string): boolean;
+    /**
+     * バックグラウンドでキャッシュダウンロードを開始（即座にreturn）。
+     * 完了時に onComplete コールバックを呼ぶ。
+     */
+    startBackgroundDownload(url: string, id: string, onComplete?: (success: boolean) => void): void;
+    /** 進行中のバックグラウンドDL ID一覧 */
+    getPendingDownloads(): string[];
     /**
      * ローカルMP3ファイルをffmpegで正規化してキャッシュ
      * ファイルパス+mtime+sizeからハッシュを生成し、変更時のみ再変換する

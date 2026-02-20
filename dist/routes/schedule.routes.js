@@ -4,7 +4,7 @@ function validateTrack(track) {
     return track && track.type && ((track.type === 'file' && track.path) ||
         (track.type === 'url' && track.url));
 }
-export function createScheduleRoutes(scheduleManager) {
+export function createScheduleRoutes(scheduleManager, streamManager) {
     const router = Router();
     /**
      * GET /schedule — 番組一覧取得
@@ -33,7 +33,8 @@ export function createScheduleRoutes(scheduleManager) {
                 }
             }
             const program = await scheduleManager.addProgram({ name, cron, tracks, enabled });
-            res.json({ ok: true, program });
+            const pending = streamManager.getPendingDownloads();
+            res.json({ ok: true, program, caching: pending.length });
         }
         catch (err) {
             res.status(400).json({ error: err.message });
@@ -45,7 +46,8 @@ export function createScheduleRoutes(scheduleManager) {
     router.put('/schedule/programs/:id', requireApiKey, async (req, res) => {
         try {
             const program = await scheduleManager.updateProgram(req.params.id, req.body);
-            res.json({ ok: true, program });
+            const pending = streamManager.getPendingDownloads();
+            res.json({ ok: true, program, caching: pending.length });
         }
         catch (err) {
             res.status(404).json({ error: err.message });

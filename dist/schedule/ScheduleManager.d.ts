@@ -27,8 +27,8 @@ export declare class ScheduleManager {
     private registerAllJobs;
     private registerJob;
     private unregisterJob;
-    /** URLトラックを事前ダウンロード & cached フラグ更新。変更があれば true を返す */
-    private cacheUrlTracks;
+    /** URLトラックのキャッシュ確認 & バックグラウンドDL開始。変更があれば true を返す */
+    private cacheUrlTracksBackground;
     /** URLトラックのキャッシュを削除 & cached フラグ更新 */
     private deleteCacheForTracks;
 }

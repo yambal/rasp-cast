@@ -34,7 +34,7 @@ async function main() {
   app.use(createStreamRoutes(streamManager, scheduleManager));
   app.use(createPlaylistRoutes(streamManager));
   app.use(createInterruptRoutes(streamManager));
-  app.use(createScheduleRoutes(scheduleManager));
+  app.use(createScheduleRoutes(scheduleManager, streamManager));
 
   // GET /api-docs - API.md を text/plain で返す（AI / プログラム向け）
   const apiMdPath = path.join(__dirname, '..', 'API.md');

@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import type { ScheduleManager } from '../schedule/ScheduleManager.js';
+import type { StreamManager } from '../stream/StreamManager.js';
 import { requireApiKey } from '../middleware/auth.js';
 
 function validateTrack(track: any): boolean {
@@ -9,7 +10,7 @@ function validateTrack(track: any): boolean {
   );
 }
 
-export function createScheduleRoutes(scheduleManager: ScheduleManager): Router {
+export function createScheduleRoutes(scheduleManager: ScheduleManager, streamManager: StreamManager): Router {
   const router = Router();
 
   /**
@@ -40,7 +41,8 @@ export function createScheduleRoutes(scheduleManager: ScheduleManager): Router {
         }
       }
       const program = await scheduleManager.addProgram({ name, cron, tracks, enabled });
-      res.json({ ok: true, program });
+      const pending = streamManager.getPendingDownloads();
+      res.json({ ok: true, program, caching: pending.length });
     } catch (err: any) {
       res.status(400).json({ error: err.message });
     }
@@ -52,7 +54,8 @@ export function createScheduleRoutes(scheduleManager: ScheduleManager): Router {
   router.put('/schedule/programs/:id', requireApiKey, async (req, res) => {
     try {
       const program = await scheduleManager.updateProgram(req.params.id as string, req.body);
-      res.json({ ok: true, program });
+      const pending = streamManager.getPendingDownloads();
+      res.json({ ok: true, program, caching: pending.length });
     } catch (err: any) {
       res.status(404).json({ error: err.message });
     }
