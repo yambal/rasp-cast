@@ -30,9 +30,9 @@ export function createStreamRoutes(streamManager: StreamManager, scheduleManager
       'Cache-Control': 'no-cache, no-store',
       'Pragma': 'no-cache',
       'icy-name': STATION_NAME,
-      'icy-genre': 'Mixed',
+      'icy-genre': ypManager ? (ypManager.getStatus().genre || 'Mixed') : 'Mixed',
       'icy-br': '128',
-      'icy-pub': '0',
+      'icy-pub': ypManager ? '1' : '0',
     };
 
     if (wantsMetadata) {

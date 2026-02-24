@@ -120,6 +120,7 @@ export class YellowPagesManager {
             registered: this.registered,
             ypId: this.ypId,
             touchFreqMinutes: this.touchFreqMinutes,
+            genre: this.config.genre,
         };
     }
     startTouching() {

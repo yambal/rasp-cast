@@ -30,6 +30,7 @@ export declare class YellowPagesManager {
         registered: boolean;
         ypId: string | null;
         touchFreqMinutes: number;
+        genre: string;
     };
     private startTouching;
     private stopTouching;
