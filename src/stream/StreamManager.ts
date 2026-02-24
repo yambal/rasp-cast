@@ -747,7 +747,7 @@ export class StreamManager {
     }
   }
 
-  private getCurrentTitle(): string {
+  getCurrentTitle(): string {
     if (!this.currentTrack) return '';
     const { artist, title } = this.currentTrack;
     return artist !== 'Unknown' ? `${artist} - ${title}` : title;

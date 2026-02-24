@@ -8,6 +8,7 @@ import { createPlaylistRoutes } from './routes/playlist.routes.js';
 import { createInterruptRoutes } from './routes/interrupt.routes.js';
 import { createScheduleRoutes } from './routes/schedule.routes.js';
 import { ScheduleManager } from './schedule/ScheduleManager.js';
+import { YellowPagesManager } from './stream/YellowPagesManager.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MUSIC_DIR = process.env.MUSIC_DIR || path.join(__dirname, '..', 'music');
@@ -16,6 +17,13 @@ const PORT = Number(process.env.PORT) || 3000;
 const PLAYLIST_PATH = process.env.PLAYLIST_PATH || path.join(__dirname, '..', 'playlist.json');
 const SCHEDULE_PATH = process.env.SCHEDULE_PATH || path.join(__dirname, '..', 'schedule.json');
 const CACHE_DIR = process.env.CACHE_DIR || path.join(__dirname, '..', 'cache');
+
+const YP_ENABLED = process.env.YP_ENABLED === 'true';
+const YP_HOST = process.env.YP_HOST || 'yp.shoutcast.com';
+const YP_GENRE = process.env.YP_GENRE || 'Mixed';
+const YP_URL = process.env.YP_URL || '';
+const YP_MAX_LISTENERS = Number(process.env.YP_MAX_LISTENERS) || 32;
+const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
 
 async function main() {
   const app = express();
@@ -46,8 +54,26 @@ async function main() {
     streamManager.cleanupCache(scheduleTrackIds);
   };
 
+  // YellowPages マネージャー
+  let ypManager: YellowPagesManager | null = null;
+  if (YP_ENABLED) {
+    ypManager = new YellowPagesManager(
+      {
+        host: YP_HOST,
+        port: PORT,
+        stationName: STATION_NAME,
+        genre: YP_GENRE,
+        url: YP_URL,
+        bitrate: 128,
+        maxListeners: YP_MAX_LISTENERS,
+        contentType: 'audio/mpeg',
+      },
+      streamManager,
+    );
+  }
+
   app.use(express.json());
-  app.use(createStreamRoutes(streamManager, scheduleManager));
+  app.use(createStreamRoutes(streamManager, scheduleManager, ypManager));
   app.use(createPlaylistRoutes(streamManager));
   app.use(createInterruptRoutes(streamManager));
   app.use(createScheduleRoutes(scheduleManager, streamManager));
@@ -69,12 +95,29 @@ async function main() {
     console.log(`[rasp-cast] Server running on http://localhost:${PORT}`);
     console.log(`[rasp-cast] Stream URL: http://localhost:${PORT}/stream`);
     console.log(`[rasp-cast] Status:     http://localhost:${PORT}/status`);
+    if (ypManager) {
+      console.log(`[rasp-cast] YP:         ${YP_HOST} (genre=${YP_GENRE})`);
+    }
     console.log(`[rasp-cast] ${trackCount} tracks loaded`);
   });
 
   if (trackCount > 0) {
     streamManager.startStreaming();
+    if (ypManager) {
+      ypManager.register();
+    }
   }
+
+  // Graceful shutdown
+  const shutdown = async (signal: string) => {
+    console.log(`[rasp-cast] ${signal} received, shutting down...`);
+    if (ypManager) {
+      await ypManager.stop();
+    }
+    process.exit(0);
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 main().catch((err) => {

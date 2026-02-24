@@ -7,7 +7,7 @@ import { requireApiKey } from '../middleware/auth.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
-export function createStreamRoutes(streamManager, scheduleManager) {
+export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
     const router = Router();
     /**
      * GET /stream - MP3 ストリーム (ICY 対応)
@@ -42,7 +42,8 @@ export function createStreamRoutes(streamManager, scheduleManager) {
         const status = streamManager.getStatus();
         const pending = streamManager.getPendingDownloads();
         const streamUrl = process.env.PUBLIC_STREAM_URL || '';
-        res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length });
+        const yp = ypManager ? ypManager.getStatus() : undefined;
+        res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length, yp });
     });
     /**
      * GET /cache - キャッシュ状態

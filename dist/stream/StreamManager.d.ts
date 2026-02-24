@@ -147,7 +147,7 @@ export declare class StreamManager {
     }>;
     removeTrack(id: string): Promise<number>;
     private adjustCurrentIndex;
-    private getCurrentTitle;
+    getCurrentTitle(): string;
     private playTrack;
     private playLocalTrack;
     private streamWithRateControl;

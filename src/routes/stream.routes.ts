@@ -5,13 +5,14 @@ import { Router } from 'express';
 import { ICY_METAINT } from '../stream/IcyMetadata.js';
 import type { StreamManager } from '../stream/StreamManager.js';
 import type { ScheduleManager } from '../schedule/ScheduleManager.js';
+import type { YellowPagesManager } from '../stream/YellowPagesManager.js';
 import { requireApiKey } from '../middleware/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
 
-export function createStreamRoutes(streamManager: StreamManager, scheduleManager?: ScheduleManager): Router {
+export function createStreamRoutes(streamManager: StreamManager, scheduleManager?: ScheduleManager, ypManager?: YellowPagesManager | null): Router {
   const router = Router();
 
   /**
@@ -51,7 +52,8 @@ export function createStreamRoutes(streamManager: StreamManager, scheduleManager
     const status = streamManager.getStatus();
     const pending = streamManager.getPendingDownloads();
     const streamUrl = process.env.PUBLIC_STREAM_URL || '';
-    res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length });
+    const yp = ypManager ? ypManager.getStatus() : undefined;
+    res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length, yp });
   });
 
   /**
