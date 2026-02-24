@@ -7,7 +7,7 @@ import { requireApiKey } from '../middleware/auth.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf-8'));
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
-export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
+export function createStreamRoutes(streamManager, scheduleManager) {
     const router = Router();
     /**
      * GET /stream - MP3 ストリーム (ICY 対応)
@@ -18,15 +18,14 @@ export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
     const streamHandler = (req, res) => {
         const wantsMetadata = req.headers['icy-metadata'] === '1';
         const headers = {
-            'Server': 'SHOUTcast Distributed Network Audio Server/Linux v2.6',
             'Content-Type': 'audio/mpeg',
             'Connection': 'keep-alive',
             'Cache-Control': 'no-cache, no-store',
             'Pragma': 'no-cache',
             'icy-name': STATION_NAME,
-            'icy-genre': ypManager ? (ypManager.getStatus().genre || 'Mixed') : 'Mixed',
+            'icy-genre': 'Mixed',
             'icy-br': '128',
-            'icy-pub': ypManager ? '1' : '0',
+            'icy-pub': '0',
         };
         if (wantsMetadata) {
             headers['icy-metaint'] = String(ICY_METAINT);
@@ -37,7 +36,7 @@ export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
         streamManager.addClient(res, wantsMetadata);
     };
     router.get('/stream', streamHandler);
-    // YP検証用: / へのリクエストでストリームクライアントと判定できる場合のみ応答
+    // ストリームクライアントが / にアクセスした場合のみストリーム応答
     router.get('/', (req, res, next) => {
         const isStreamClient = req.headers['icy-metadata'] === '1'
             || req.headers['user-agent']?.includes('WinampMPEG')
@@ -51,26 +50,13 @@ export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
         }
     });
     /**
-     * GET /7.html - DNAS 互換ステータスページ (YP 検証用)
-     * 形式: currentListeners,streamStatus,peakListeners,maxListeners,uniqueListeners,bitrate,songTitle
-     */
-    router.get('/7.html', (_req, res) => {
-        const status = streamManager.getStatus();
-        const title = streamManager.getCurrentTitle();
-        const maxListeners = ypManager ? ypManager.getStatus().genre ? 32 : 32 : 32;
-        const line = `${status.listeners},1,${status.listeners},${maxListeners},${status.listeners},128,${title}`;
-        res.set('Server', 'SHOUTcast Distributed Network Audio Server/Linux v2.6');
-        res.type('text/html').send(`<html><body>${line}</body></html>`);
-    });
-    /**
      * GET /status - 現在の配信状態 (デバッグ用)
      */
     router.get('/status', (_req, res) => {
         const status = streamManager.getStatus();
         const pending = streamManager.getPendingDownloads();
         const streamUrl = process.env.PUBLIC_STREAM_URL || '';
-        const yp = ypManager ? ypManager.getStatus() : undefined;
-        res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length, yp });
+        res.json({ ...status, version: pkg.version, streamUrl, stationName: STATION_NAME, busy: pending.length > 0, pendingCaches: pending.length });
     });
     /**
      * GET /cache - キャッシュ状態
