@@ -8,3 +8,4 @@ schedule.json
 cache/
 frontend/node_modules/
 .claude/
+SECURITY.md
