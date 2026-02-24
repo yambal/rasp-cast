@@ -15,7 +15,7 @@ export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
      * クライアントが `Icy-MetaData: 1` ヘッダーを送った場合、
      * ICY メタデータを 8192 バイト間隔で挿入する。
      */
-    router.get('/stream', (req, res) => {
+    const streamHandler = (req, res) => {
         const wantsMetadata = req.headers['icy-metadata'] === '1';
         const headers = {
             'Content-Type': 'audio/mpeg',
@@ -34,6 +34,20 @@ export function createStreamRoutes(streamManager, scheduleManager, ypManager) {
         res.socket?.setNoDelay(true);
         res.writeHead(200, headers);
         streamManager.addClient(res, wantsMetadata);
+    };
+    router.get('/stream', streamHandler);
+    // YP検証用: / へのリクエストでストリームクライアントと判定できる場合のみ応答
+    router.get('/', (req, res, next) => {
+        const isStreamClient = req.headers['icy-metadata'] === '1'
+            || req.headers['user-agent']?.includes('WinampMPEG')
+            || req.headers['user-agent']?.includes('NSPlayer')
+            || req.headers['accept']?.includes('audio/');
+        if (isStreamClient) {
+            streamHandler(req, res);
+        }
+        else {
+            next();
+        }
     });
     /**
      * GET /status - 現在の配信状態 (デバッグ用)
