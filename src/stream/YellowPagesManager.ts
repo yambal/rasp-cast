@@ -10,6 +10,8 @@ export interface YPConfig {
   bitrate: number;
   maxListeners: number;
   contentType: string;
+  /** リレーサーバー (host:port)。設定時はYPリクエストをリレー経由で送信 */
+  relay?: string;
 }
 
 interface YPResponse {
@@ -54,7 +56,8 @@ export class YellowPagesManager {
           this.ypId = res['icy-id'];
           this.registered = true;
           this.touchFreqMinutes = Number(res['icy-tchfrq']) || 5;
-          console.log(`[YP] Registered: id=${this.ypId}, touchFreq=${this.touchFreqMinutes}min`);
+          const via = this.config.relay ? ` via relay ${this.config.relay}` : '';
+          console.log(`[YP] Registered: id=${this.ypId}, touchFreq=${this.touchFreqMinutes}min${via}`);
           this.startTouching();
           return true;
         }
@@ -167,12 +170,22 @@ export class YellowPagesManager {
   /** YPサーバーへHTTP GETリクエストを送信し、icy-* レスポンスをパースして返す */
   private ypRequest(path: string): Promise<YPResponse> {
     return new Promise((resolve, reject) => {
+      // リレー設定時はリレーサーバー経由で送信（YPがリレーのIPを見る）
+      let targetHost = this.config.host;
+      let targetPort = 80;
+      if (this.config.relay) {
+        const parts = this.config.relay.split(':');
+        targetHost = parts[0];
+        targetPort = Number(parts[1]) || 80;
+      }
+
       const req = http.get(
         {
-          hostname: this.config.host,
-          port: 80,
+          hostname: targetHost,
+          port: targetPort,
           path,
           headers: {
+            'Host': this.config.host,
             'Content-Type': 'shoutcast/crapola',
             'User-Agent': 'rasp-cast',
           },

@@ -8,6 +8,8 @@ export interface YPConfig {
     bitrate: number;
     maxListeners: number;
     contentType: string;
+    /** リレーサーバー (host:port)。設定時はYPリクエストをリレー経由で送信 */
+    relay?: string;
 }
 export declare class YellowPagesManager {
     private config;

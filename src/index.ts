@@ -24,6 +24,7 @@ const YP_GENRE = process.env.YP_GENRE || 'Mixed';
 const YP_URL = process.env.YP_URL || '';
 const YP_PORT = Number(process.env.YP_PORT) || PORT;
 const YP_MAX_LISTENERS = Number(process.env.YP_MAX_LISTENERS) || 32;
+const YP_RELAY = process.env.YP_RELAY || '';
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
 
 async function main() {
@@ -68,6 +69,7 @@ async function main() {
         bitrate: 128,
         maxListeners: YP_MAX_LISTENERS,
         contentType: 'audio/mpeg',
+        relay: YP_RELAY || undefined,
       },
       streamManager,
     );
@@ -97,7 +99,8 @@ async function main() {
     console.log(`[rasp-cast] Stream URL: http://localhost:${PORT}/stream`);
     console.log(`[rasp-cast] Status:     http://localhost:${PORT}/status`);
     if (ypManager) {
-      console.log(`[rasp-cast] YP:         ${YP_HOST} (genre=${YP_GENRE})`);
+      const relayInfo = YP_RELAY ? ` via relay ${YP_RELAY}` : '';
+      console.log(`[rasp-cast] YP:         ${YP_HOST} (genre=${YP_GENRE})${relayInfo}`);
     }
     console.log(`[rasp-cast] ${trackCount} tracks loaded`);
   });
