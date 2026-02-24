@@ -25,6 +25,7 @@ export function createStreamRoutes(streamManager: StreamManager, scheduleManager
     const wantsMetadata = req.headers['icy-metadata'] === '1';
 
     const headers: Record<string, string> = {
+      'Server': 'SHOUTcast Distributed Network Audio Server/Linux v2.6',
       'Content-Type': 'audio/mpeg',
       'Connection': 'keep-alive',
       'Cache-Control': 'no-cache, no-store',
@@ -58,6 +59,19 @@ export function createStreamRoutes(streamManager: StreamManager, scheduleManager
     } else {
       next();
     }
+  });
+
+  /**
+   * GET /7.html - DNAS 互換ステータスページ (YP 検証用)
+   * 形式: currentListeners,streamStatus,peakListeners,maxListeners,uniqueListeners,bitrate,songTitle
+   */
+  router.get('/7.html', (_req, res) => {
+    const status = streamManager.getStatus();
+    const title = streamManager.getCurrentTitle();
+    const maxListeners = ypManager ? ypManager.getStatus().genre ? 32 : 32 : 32;
+    const line = `${status.listeners},1,${status.listeners},${maxListeners},${status.listeners},128,${title}`;
+    res.set('Server', 'SHOUTcast Distributed Network Audio Server/Linux v2.6');
+    res.type('text/html').send(`<html><body>${line}</body></html>`);
   });
 
   /**
