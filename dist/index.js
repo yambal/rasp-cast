@@ -19,6 +19,7 @@ const YP_ENABLED = process.env.YP_ENABLED === 'true';
 const YP_HOST = process.env.YP_HOST || 'yp.shoutcast.com';
 const YP_GENRE = process.env.YP_GENRE || 'Mixed';
 const YP_URL = process.env.YP_URL || '';
+const YP_PORT = Number(process.env.YP_PORT) || PORT;
 const YP_MAX_LISTENERS = Number(process.env.YP_MAX_LISTENERS) || 32;
 const STATION_NAME = process.env.STATION_NAME || 'YOUR STATION';
 async function main() {
@@ -50,7 +51,7 @@ async function main() {
     if (YP_ENABLED) {
         ypManager = new YellowPagesManager({
             host: YP_HOST,
-            port: PORT,
+            port: YP_PORT,
             stationName: STATION_NAME,
             genre: YP_GENRE,
             url: YP_URL,
