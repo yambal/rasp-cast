@@ -48,6 +48,8 @@ export class StreamManager {
     downloadQueue = [];
     /** キュー全完了時コールバック */
     onQueueEmpty;
+    /** playCount 遅延保存タイマー */
+    persistTimer = null;
     constructor(musicDir, cacheDir) {
         this.musicDir = musicDir;
         this.cacheDir = cacheDir;
@@ -330,7 +332,7 @@ export class StreamManager {
                 }
             }
             const normalizedPath = await this.normalizeFile(filePath);
-            return { id: entry.id || crypto.randomUUID(), type: 'file', filePath: normalizedPath, originalPath: filePath, filename, title, artist };
+            return { id: entry.id || crypto.randomUUID(), type: 'file', filePath: normalizedPath, originalPath: filePath, filename, title, artist, playCount: entry.playCount || 0 };
         }
         if (entry.type === 'url' && entry.url) {
             const id = entry.id || crypto.randomUUID();
@@ -344,6 +346,7 @@ export class StreamManager {
                 cached,
                 title: entry.title || 'Unknown',
                 artist: entry.artist || 'Unknown',
+                playCount: entry.playCount || 0,
             };
         }
         throw new Error('Invalid track: type with path (file) or url (url) required');
@@ -368,7 +371,7 @@ export class StreamManager {
                 // ID3 読取失敗時はファイル名をフォールバック
             }
             const normalizedPath = await this.normalizeFile(filePath);
-            this.tracks.push({ id: crypto.randomUUID(), type: 'file', filePath: normalizedPath, originalPath: filePath, title, artist, filename: file });
+            this.tracks.push({ id: crypto.randomUUID(), type: 'file', filePath: normalizedPath, originalPath: filePath, title, artist, filename: file, playCount: 0 });
         }
         console.log(`[StreamManager] Scanned ${this.tracks.length} tracks from directory`);
         return this.tracks.length;
@@ -593,9 +596,9 @@ export class StreamManager {
                     const rel = origPath
                         ? path.relative(path.join(this.musicDir, '..'), origPath).replace(/\\/g, '/')
                         : undefined;
-                    return { id: t.id, type: 'file', path: rel, title: t.title, artist: t.artist };
+                    return { id: t.id, type: 'file', path: rel, title: t.title, artist: t.artist, playCount: t.playCount };
                 }
-                return { id: t.id, type: 'url', url: t.url, title: t.title, artist: t.artist, cached: t.cached };
+                return { id: t.id, type: 'url', url: t.url, title: t.title, artist: t.artist, cached: t.cached, playCount: t.playCount };
             }),
         };
     }
@@ -659,6 +662,8 @@ export class StreamManager {
     }
     async playTrack(track) {
         this.currentTrack = track;
+        track.playCount = (track.playCount || 0) + 1;
+        this.schedulePersist();
         const displayTitle = this.getCurrentTitle();
         // 全クライアントのメタデータを更新
         for (const client of this.clients) {
@@ -742,6 +747,45 @@ export class StreamManager {
             chunkQueue = [];
             resolve();
         });
+    }
+    /** playCount 変更を 5 秒後にまとめて playlist.json へ保存 */
+    schedulePersist() {
+        if (this.persistTimer)
+            return;
+        this.persistTimer = setTimeout(() => {
+            this.persistPlaylist();
+            this.persistTimer = null;
+        }, 2_500);
+    }
+    /** 現在のトラック情報を playlist.json に書き出す */
+    persistPlaylist() {
+        if (!this.playlistPath)
+            return;
+        const playlist = {
+            shuffle: this.shuffle,
+            tracks: this.tracks.map((t) => {
+                const base = {
+                    id: t.id,
+                    type: t.type,
+                    title: t.title,
+                    artist: t.artist,
+                    playCount: t.playCount || 0,
+                };
+                if (t.type === 'file') {
+                    const origPath = t.originalPath || t.filePath;
+                    base.path = origPath
+                        ? path.relative(path.join(this.musicDir, '..'), origPath).replace(/\\/g, '/')
+                        : undefined;
+                }
+                else {
+                    base.url = t.url;
+                    if (t.cached !== undefined)
+                        base.cached = t.cached;
+                }
+                return base;
+            }),
+        };
+        fs.writeFileSync(this.playlistPath, JSON.stringify(playlist, null, 2) + '\n', 'utf-8');
     }
     broadcast(chunk) {
         this.lastBroadcastTime = Date.now();

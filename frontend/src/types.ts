@@ -6,6 +6,7 @@ export interface Track {
   title: string;
   artist: string;
   filename?: string;
+  playCount?: number;
 }
 
 export interface StatusResponse {

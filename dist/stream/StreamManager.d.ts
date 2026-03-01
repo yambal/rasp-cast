@@ -7,6 +7,7 @@ export interface PlaylistFileTrack {
     title?: string;
     artist?: string;
     cached?: boolean;
+    playCount?: number;
 }
 export declare class StreamManager {
     /** ストリーミングビットレート (kbps) */
@@ -44,6 +45,8 @@ export declare class StreamManager {
     private downloadQueue;
     /** キュー全完了時コールバック */
     onQueueEmpty?: () => void;
+    /** playCount 遅延保存タイマー */
+    private persistTimer;
     constructor(musicDir: string, cacheDir: string);
     /** ラウドネス測定値 (loudnorm 1st pass) */
     private static readonly LOUDNORM_TARGET;
@@ -151,5 +154,9 @@ export declare class StreamManager {
     private playTrack;
     private playLocalTrack;
     private streamWithRateControl;
+    /** playCount 変更を 5 秒後にまとめて playlist.json へ保存 */
+    private schedulePersist;
+    /** 現在のトラック情報を playlist.json に書き出す */
+    private persistPlaylist;
     private broadcast;
 }
